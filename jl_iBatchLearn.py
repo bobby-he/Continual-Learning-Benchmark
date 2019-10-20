@@ -37,6 +37,7 @@ def run(args):
     agent = agents.__dict__[args.agent_type].__dict__[args.agent_name](agent_config)
     print(args.agent_type, args.agent_name)
     print(agent.model)
+    print('wtf')
     print('#parameter of model:',agent.count_parameter())
 
     # Decide split ordering
