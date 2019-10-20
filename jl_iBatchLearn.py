@@ -35,7 +35,7 @@ def run(args):
                     'print_freq':args.print_freq, 'gpuid': args.gpuid,
                     'reg_coef':args.reg_coef}
     agent = agents.__dict__[args.agent_type].__dict__[args.agent_name](agent_config)
-    print(agents.__dict__())
+    print(agents.__dict__)
     print(agent.model)
     print('#parameter of model:',agent.count_parameter())
 
