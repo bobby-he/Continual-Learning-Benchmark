@@ -1,0 +1,216 @@
+split_boundaries: [0, 2, 4, 6, 8, 10]
+{'1': [0, 1], '2': [2, 3], '3': [4, 5], '4': [6, 7], '5': [8, 9]}
+MLP(
+  (linear): Sequential(
+    (0): Linear(in_features=1024, out_features=400, bias=True)
+    (1): ReLU(inplace=True)
+    (2): Linear(in_features=400, out_features=400, bias=True)
+    (3): ReLU(inplace=True)
+  )
+  (last): ModuleDict(
+    (All): Linear(in_features=400, out_features=2, bias=True)
+  )
+)
+#parameter of model: 571202
+Task order: ['1', '2', '3', '4', '5']
+====================== 1 =======================
+#reg_term: 0
+Epoch:0
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/99]	0.1055 (0.1055)	0.0934 (0.0934)	0.712 (0.712)	32.81 (32.81)
+[98/99]	0.0030 (0.0093)	0.0001 (0.0062)	0.000 (0.020)	100.00 (99.08)
+ * Train Acc 99.076
+ * Val Acc 99.858, Total time 0.21
+Epoch:1
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/99]	0.0810 (0.0810)	0.0766 (0.0766)	0.013 (0.013)	99.22 (99.22)
+[98/99]	0.0042 (0.0089)	0.0014 (0.0058)	0.000 (0.004)	100.00 (99.89)
+ * Train Acc 99.889
+ * Val Acc 99.905, Total time 0.21
+Epoch:2
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/99]	0.0786 (0.0786)	0.0735 (0.0735)	0.000 (0.000)	100.00 (100.00)
+[98/99]	0.0033 (0.0087)	0.0002 (0.0056)	0.000 (0.002)	100.00 (99.94)
+ * Train Acc 99.945
+ * Val Acc 99.905, Total time 0.25
+Epoch:3
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/99]	0.0900 (0.0900)	0.0835 (0.0835)	0.000 (0.000)	100.00 (100.00)
+[98/99]	0.0128 (0.0089)	0.0101 (0.0058)	0.000 (0.002)	100.00 (99.94)
+ * Train Acc 99.945
+ * Val Acc 99.858, Total time 0.22
+Computing EWC
+Sample 60000 for estimating the F matrix.
+validation split name: 1
+ * Val Acc 99.858, Total time 0.22
+====================== 2 =======================
+#reg_term: 1
+Epoch:0
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/95]	0.0841 (0.0841)	0.0753 (0.0753)	3.613 (3.613)	43.75 (43.75)
+[94/95]	0.0048 (0.0088)	0.0002 (0.0041)	0.083 (0.212)	98.25 (94.29)
+ * Train Acc 94.292
+ * Val Acc 98.580, Total time 0.21
+Epoch:1
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/95]	0.0790 (0.0790)	0.0724 (0.0724)	0.066 (0.066)	98.44 (98.44)
+[94/95]	0.0052 (0.0086)	0.0002 (0.0040)	0.026 (0.065)	100.00 (98.52)
+ * Train Acc 98.519
+ * Val Acc 98.041, Total time 0.21
+Epoch:2
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/95]	0.0847 (0.0847)	0.0782 (0.0782)	0.049 (0.049)	98.44 (98.44)
+[94/95]	0.0048 (0.0088)	0.0002 (0.0042)	0.064 (0.038)	98.25 (99.18)
+ * Train Acc 99.181
+ * Val Acc 98.972, Total time 0.22
+Epoch:3
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/95]	0.0845 (0.0845)	0.0780 (0.0780)	0.054 (0.054)	99.22 (99.22)
+[94/95]	0.0048 (0.0089)	0.0002 (0.0041)	0.010 (0.026)	100.00 (99.50)
+ * Train Acc 99.495
+ * Val Acc 99.363, Total time 0.21
+Computing EWC
+Sample 60000 for estimating the F matrix.
+validation split name: 1
+ * Val Acc 78.345, Total time 0.22
+validation split name: 2
+ * Val Acc 99.363, Total time 0.22
+====================== 3 =======================
+#reg_term: 1
+Epoch:0
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/88]	0.0774 (0.0774)	0.0719 (0.0719)	1.149 (1.149)	70.31 (70.31)
+[87/88]	0.0042 (0.0091)	0.0001 (0.0044)	0.029 (0.147)	100.00 (97.75)
+ * Train Acc 97.754
+ * Val Acc 99.520, Total time 0.20
+Epoch:1
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/88]	0.0855 (0.0855)	0.0782 (0.0782)	0.024 (0.024)	100.00 (100.00)
+[87/88]	0.0050 (0.0096)	0.0002 (0.0048)	0.017 (0.032)	100.00 (99.43)
+ * Train Acc 99.432
+ * Val Acc 99.573, Total time 0.21
+Epoch:2
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/88]	0.0838 (0.0838)	0.0770 (0.0770)	0.046 (0.046)	99.22 (99.22)
+[87/88]	0.0057 (0.0090)	0.0013 (0.0043)	0.010 (0.020)	100.00 (99.71)
+ * Train Acc 99.707
+ * Val Acc 99.733, Total time 0.21
+Epoch:3
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/88]	0.0858 (0.0858)	0.0786 (0.0786)	0.034 (0.034)	99.22 (99.22)
+[87/88]	0.0047 (0.0094)	0.0002 (0.0047)	0.011 (0.015)	100.00 (99.77)
+ * Train Acc 99.769
+ * Val Acc 99.787, Total time 0.20
+Computing EWC
+Sample 60000 for estimating the F matrix.
+validation split name: 1
+ * Val Acc 30.355, Total time 0.22
+validation split name: 2
+ * Val Acc 84.427, Total time 0.22
+validation split name: 3
+ * Val Acc 99.787, Total time 0.21
+====================== 4 =======================
+#reg_term: 1
+Epoch:0
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/96]	0.0823 (0.0823)	0.0757 (0.0757)	4.402 (4.402)	39.06 (39.06)
+[95/96]	0.0053 (0.0088)	0.0001 (0.0039)	0.070 (0.313)	100.00 (98.03)
+ * Train Acc 98.030
+ * Val Acc 99.496, Total time 0.21
+Epoch:1
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/96]	0.0801 (0.0801)	0.0729 (0.0729)	0.073 (0.073)	100.00 (100.00)
+[95/96]	0.0050 (0.0089)	0.0012 (0.0042)	0.025 (0.048)	100.00 (99.77)
+ * Train Acc 99.770
+ * Val Acc 99.396, Total time 0.20
+Epoch:2
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/96]	0.0786 (0.0786)	0.0738 (0.0738)	0.026 (0.026)	100.00 (100.00)
+[95/96]	0.0041 (0.0088)	0.0001 (0.0042)	0.013 (0.023)	100.00 (99.84)
+ * Train Acc 99.844
+ * Val Acc 99.547, Total time 0.21
+Epoch:3
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/96]	0.0831 (0.0831)	0.0771 (0.0771)	0.014 (0.014)	100.00 (100.00)
+[95/96]	0.0048 (0.0095)	0.0011 (0.0047)	0.007 (0.012)	100.00 (99.96)
+ * Train Acc 99.959
+ * Val Acc 99.698, Total time 0.21
+Computing EWC
+Sample 60000 for estimating the F matrix.
+validation split name: 1
+ * Val Acc 68.180, Total time 0.22
+validation split name: 2
+ * Val Acc 87.218, Total time 0.21
+validation split name: 3
+ * Val Acc 56.937, Total time 0.20
+validation split name: 4
+ * Val Acc 99.698, Total time 0.20
+====================== 5 =======================
+#reg_term: 1
+Epoch:0
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/93]	0.0833 (0.0833)	0.0759 (0.0759)	1.629 (1.629)	71.09 (71.09)
+[92/93]	0.0047 (0.0087)	0.0002 (0.0040)	0.059 (0.209)	100.00 (96.50)
+ * Train Acc 96.500
+ * Val Acc 98.336, Total time 0.22
+Epoch:1
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/93]	0.0886 (0.0886)	0.0816 (0.0816)	0.064 (0.064)	99.22 (99.22)
+[92/93]	0.0045 (0.0092)	0.0001 (0.0045)	0.028 (0.078)	100.00 (98.45)
+ * Train Acc 98.449
+ * Val Acc 98.638, Total time 0.20
+Epoch:2
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/93]	0.0807 (0.0807)	0.0752 (0.0752)	0.043 (0.043)	99.22 (99.22)
+[92/93]	0.0041 (0.0088)	0.0001 (0.0041)	0.030 (0.063)	100.00 (98.70)
+ * Train Acc 98.703
+ * Val Acc 98.689, Total time 0.20
+Epoch:3
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/93]	0.0780 (0.0780)	0.0716 (0.0716)	0.052 (0.052)	99.22 (99.22)
+[92/93]	0.0045 (0.0088)	0.0002 (0.0041)	0.021 (0.048)	100.00 (99.04)
+ * Train Acc 99.042
+ * Val Acc 98.790, Total time 0.23
+Computing EWC
+Sample 60000 for estimating the F matrix.
+validation split name: 1
+ * Val Acc 41.040, Total time 0.22
+validation split name: 2
+ * Val Acc 66.454, Total time 0.21
+validation split name: 3
+ * Val Acc 11.153, Total time 0.20
+validation split name: 4
+ * Val Acc 90.735, Total time 0.20
+validation split name: 5
+ * Val Acc 98.790, Total time 0.20
+OrderedDict([('1', OrderedDict([('1', 99.8581560283688), ('2', 78.3451536643026), ('3', 30.354609929078013), ('4', 68.17966903073287), ('5', 41.040189125295505)])), ('2', OrderedDict([('2', 99.36336924583742), ('3', 84.42703232125368), ('4', 87.21841332027424), ('5', 66.45445641527914)])), ('3', OrderedDict([('3', 99.78655282817503), ('4', 56.937033084311636), ('5', 11.152614727854855)])), ('4', OrderedDict([('4', 99.69788519637463), ('5', 90.73514602215509)])), ('5', OrderedDict([('5', 98.78971255673223)]))])
+Task 1 average acc: 99.8581560283688
+Task 2 average acc: 88.85426145507
+Task 3 average acc: 71.52273169283558
+Task 4 average acc: 78.00825015792334
+Task 5 average acc: 61.63442376946337
+===Summary of experiment repeats: 1 / 1 ===
+The regularization coefficient: 700.0
+The last avg acc of all repeats: [61.63442377]
+mean: 61.63442376946337 std: 0.0
+reg_coef: 700.0 mean: 61.63442376946337 std: 0.0
