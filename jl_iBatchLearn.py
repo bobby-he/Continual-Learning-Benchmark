@@ -35,9 +35,7 @@ def run(args):
                     'print_freq':args.print_freq, 'gpuid': args.gpuid,
                     'reg_coef':args.reg_coef}
     agent = agents.__dict__[args.agent_type].__dict__[args.agent_name](agent_config)
-    print(args.agent_type, args.agent_name)
     print(agent.model)
-    print('wtf')
     print('#parameter of model:',agent.count_parameter())
 
     # Decide split ordering
@@ -96,11 +94,11 @@ def get_args(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpuid', nargs="+", type=int, default=[0],
                         help="The list of gpuid, ex:--gpuid 3 1. Negative value means cpu-only")
-    parser.add_argument('--model_type', type=str, default='mlp', help="The type (mlp|lenet|vgg|resnet) of backbone network")
-    parser.add_argument('--model_name', type=str, default='MLP', help="The name of actual model for the backbone")
+    parser.add_argument('--model_type', type=str, default='jl_models', help="The type (mlp|lenet|vgg|resnet) of backbone network")
+    parser.add_argument('--model_name', type=str, default='JlNet400', help="The name of actual model for the backbone")
     parser.add_argument('--force_out_dim', type=int, default=2, help="Set 0 to let the task decide the required output dimension")
-    parser.add_argument('--agent_type', type=str, default='default', help="The type (filename) of agent")
-    parser.add_argument('--agent_name', type=str, default='NormalNN', help="The class name of agent")
+    parser.add_argument('--agent_type', type=str, default='jl_agent', help="The type (filename) of agent")
+    parser.add_argument('--agent_name', type=str, default='JlNN', help="The class name of agent")
     parser.add_argument('--optimizer', type=str, default='SGD', help="SGD|Adam|RMSprop|amsgrad|Adadelta|Adagrad|Adamax ...")
     parser.add_argument('--dataroot', type=str, default='data', help="The root folder of dataset or downloaded data")
     parser.add_argument('--dataset', type=str, default='MNIST', help="MNIST(default)|CIFAR10|CIFAR100")
@@ -120,7 +118,7 @@ def get_args(argv):
     parser.add_argument('--lr', type=float, default=0.01, help="Learning rate")
     parser.add_argument('--momentum', type=float, default=0)
     parser.add_argument('--weight_decay', type=float, default=0)
-    parser.add_argument('--schedule', nargs="+", type=int, default=[2],
+    parser.add_argument('--schedule', nargs="+", type=int, default=[4],
                         help="The list of epoch numbers to reduce learning rate by factor of 0.1. Last number is the end epoch")
     parser.add_argument('--print_freq', type=float, default=100, help="Print the log at every x iteration")
     parser.add_argument('--model_weights', type=str, default=None,

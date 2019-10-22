@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
 from  torch.nn import functional as F
-import torch.nn import init as init
+from torch.nn import init as init
 from torch.nn.modules.module import Module
 
 from torch.autograd import Variable
@@ -15,7 +15,7 @@ from scipy.linalg import cho_factor, cho_solve
 default_np_dtype = np.float32
 
 def regularized_cholesky_factor(mat, lambda_, inverse_method='cpu',
-                        use_cuda=use_cuda):
+                        use_cuda=True):
   # calculates and returns the regularised cholesky decomposition of a matrix
   assert mat.shape[0] == mat.shape[1]
   ii = torch.eye(mat.shape[0])
@@ -77,19 +77,19 @@ class JlNet(nn.Module):
   def __init__(self, out_dim = 10, in_channel = 1, img_sz = 32, hidden_dim = 256, use_cuda = True, pre_reg_mat_decay = 0.9, damping = 150, proj_dim = 1000):
     super(JlNet, self).__init__()
     self.in_dim = in_channel * img_sz * img_sz
-    self.fs = [self.in_dim, self.hidden_dim, self.hidden_dim, self.out_dim]
+    self.fs = [self.in_dim, hidden_dim, hidden_dim, out_dim]
     self.n = len(self.fs) - 1
-    self.A_proj, self.B_proj = jl_kfac_gaussian_proj_mats(self.fs, q = proj_dim, use_cuda = use_cuda)
     self.proj_dim = proj_dim
     self.U_proj = [None] * 1
     self.grads_proj = [None] * 1
     self.pre_proj = [None] * 1
     self.initialize = [True] * 1
     self.pre_reg_mat = [None] * 1
-    self.precon_update_list = [None] * n
-    self.grad_list = [None] * n 
+    self.precon_update_list = [None] * self.n
+    self.grad_list = [None] * self.n 
     self.pre_reg_mat_decay = pre_reg_mat_decay
     self.damping = damping
+    self.use_cuda = use_cuda
 ##############################################################
     class JlngAddmm(Function):
       @staticmethod
@@ -132,7 +132,7 @@ class JlNet(nn.Module):
           if i == 0:
             
             if self.initialize[0]:
-              print('acidic')
+              #print('acidic')
               self.pre_reg_mat[0] = self.U_proj[0] @ self.U_proj[0].t()
               self.initialize[0] = False
             else:
@@ -169,20 +169,20 @@ class JlNet(nn.Module):
           #else:
             #AU_AU[0] += ((A_proj[i] @ acts_proj[i].t()) * (B_proj[i] @ preact_grads_proj[i].t()))
           ctx.mode = 'jlng'
-        elif mode == 'jlng':
+        elif ctx.mode == 'jlng':
           grads_pre_fisher = A.t() @ B # already normalised as B is divided by batch_size
           # only compute the grad coefficients once
 
-          if i == n-1:
+          if i == self.n-1:
             #approx_kmat_cho = regularized_cholesky_factor(AU_AU[0], lambda_ = damping)
             approx_kmat_cho = regularized_cholesky_factor(self.pre_reg_mat[0], lambda_ = self.damping)
-            temp[0] = torch.from_numpy(cho_solve((approx_kmat_cho.cpu().numpy(), True), grads_proj[0].view(-1, 1).cpu().numpy()))        
-            if use_cuda:
-              temp[0] = temp[0].cuda()
+            temp = torch.from_numpy(cho_solve((approx_kmat_cho.cpu().numpy(), True), self.grads_proj[0].view(-1, 1).cpu().numpy()))        
+            if self.use_cuda:
+              temp = temp.cuda()
               
             #grad_coeffs[0] = U_proj[0].t() @ temp # no ema method
             #pre_proj[0] = AU_AU[0] @ temp[0] #  
-            self.pre_proj[0] = pre_reg_mat[0] @ temp[0]
+            self.pre_proj[0] = self.pre_reg_mat[0] @ temp
           #temp = (Bs[i] / batch_size_sqrt) * grad_coeffs[0] # no ema method
           #grad_subtract = As[i].t() @ temp 
 
@@ -192,7 +192,7 @@ class JlNet(nn.Module):
           test = self.A_proj[i] * self.grads_proj[0].view(-1, 1)
           grads_pre_fisher_test = (test.t() @ self.B_proj[i]) * self.proj_dim
           
-          grads_pre_fisher_norm = torch.sum(grads_pre_fisher ** 2)
+          #grads_pre_fisher_norm = torch.sum(grads_pre_fisher ** 2)
           #grads_pre_fisher_test_norm = torch.sum(grads_pre_fisher_test ** 2)
           
           #norm_ratio = torch.sqrt(grads_pre_fisher_norm/grads_pre_fisher_test_norm)
@@ -200,23 +200,23 @@ class JlNet(nn.Module):
           A_temp = self.A_proj[i] * self.pre_proj[0]
           grad_subtract = (A_temp.t() @ self.B_proj[i]) * self.proj_dim #* norm_ratio
           
-          update = grads_pre_fisher_test - grad_subtract 
-          if i == 0:
-            update_norm = torch.sum(update ** 2)
+          update = grads_pre_fisher_test #- grad_subtract 
+          #if i == 0:
+            #update_norm = torch.sum(update ** 2)
             #print(norm_ratio)
 
             #print(i, (torch.sum(grad_subtract**2)/grads_pre_fisher_norm).item())
             #print(i, (grads_pre_fisher_test_norm/grads_pre_fisher_norm).item())
             #print((update_norm / grads_pre_fisher_norm).item())
-            print(i, (torch.sum(update * grads_pre_fisher)/torch.sqrt(update_norm)/torch.sqrt(grads_pre_fisher_norm)).item())
+            #print(i, (torch.sum(update * grads_pre_fisher)/torch.sqrt(update_norm)/torch.sqrt(grads_pre_fisher_norm)).item())
           grad_matrix2 = Variable(update) / self.damping
 
           #print(torch.sum(grad_subtract **2), torch.sum(grads_pre_fisher **2), torch.sum(grad_matrix2 **2))
           self.precon_update_list[i] = -1 * torch.clone(grad_matrix2).detach()
           self.grad_list[i] = torch.clone(grads_pre_fisher).detach()
-          ctx.mode = 'U_proj_capture'
-        #######################################################################################################################################################################
-        elif mode == 'standard':
+          ctx.mode = 'standard'
+
+        elif ctx.mode == 'standard':
           grad_matrix2 = torch.mm(matrix1.t(), grad_output)
 
         else:
@@ -261,14 +261,25 @@ class JlNet(nn.Module):
         """
         __constants__ = ['bias', 'in_features', 'out_features']
 
-        def __init__(self, in_features, out_features, bias=True, layer_idx = 0):
+        def __init__(self, in_features, out_features, bias=True, layer_idx = 0, use_cuda = True):
             super(JlLinear, self).__init__()
             self.in_features = in_features
             self.out_features = out_features
             self.weights = Parameter(torch.from_numpy(ng_init(in_features, out_features, bias = bias)))
             self.layer_idx = layer_idx
+            self.use_cuda = use_cuda
+            if bias:
+              self.bias = True
+            else:
+              self.register_parameter('bias', None)
             
         def forward(self, input):
+            if self.bias:
+                ones_input = torch.ones(input.shape[0], 1)
+                if self.use_cuda:
+                    ones_input = ones_input.cuda()
+                input= torch.cat((input, ones_input), dim = 1)
+                    
             return jlng_matmul(input, self.weights, self.layer_idx)
             
         def extra_repr(self):
@@ -276,23 +287,23 @@ class JlNet(nn.Module):
                 self.in_features, self.out_features, self.bias is not None
             )
 ############################################################################
-
-
-
-
+    self.JlLinear = JlLinear
     self.linear = nn.Sequential(
-          JlLinear(self.in_dim,hidden_dim, layer_idx = 0), 
+          JlLinear(self.in_dim, hidden_dim, layer_idx = 0, use_cuda = self.use_cuda), 
           nn.ReLU(inplace = True),
-          JlLinear(hidden_dim, hidden_dim, layer_idx = 1),
+          JlLinear(hidden_dim, hidden_dim, layer_idx = 1, use_cuda = self.use_cuda),
           nn.ReLU(inplace = True),
     )
-    self.last = JlLinear(hidden_dim, out_dim, layer_idx = 2)    
-
+    self.last = JlLinear(hidden_dim, out_dim, layer_idx = 2, use_cuda = self.use_cuda)    
+    
+  def new_proj(self):
+    self.A_proj, self.B_proj = jl_kfac_gaussian_proj_mats(self.fs, q = self.proj_dim, use_cuda = self.use_cuda)
+    self.initialize[0] = True
   def features(self, x):
-    x = self.linear(x, view(-1, self.in_dim))
+    x = self.linear(x.view(-1, self.in_dim))
     return x
     
-  def logits(self, x)
+  def logits(self, x):
     x = self.last(x)
     return x
     
@@ -301,7 +312,24 @@ class JlNet(nn.Module):
     x = self.logits(x)
     return x
           
+def JlNet100():
+    return JlNet(hidden_dim=100)
 
+
+def JlNet400():
+    return JlNet(hidden_dim=400)
+
+
+def JlNet1000():
+    return JlNet(hidden_dim=1000)
+
+
+def JlNet2000():
+    return JlNet(hidden_dim=2000)
+
+
+def JlNet5000():
+    return JlNet(hidden_dim=5000)
 
   
   

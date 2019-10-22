@@ -62,3 +62,28 @@ class Timer(object):
         self.interval = time.time() - self.time
         self.time = time.time()
         return self.interval
+        
+def ip(list1, list2):
+  # Inner product of lists or tuples of tensors.
+  
+  return sum(tuple(torch.sum(tensor1 * tensor2) 
+                        for tensor1, tensor2 in zip(list1, list2)))
+                        
+def _two_by_two_solve(m, vec):
+  """Solve a 2x2 system by direct inversion.
+  Args:
+    m: A length 2 list of length 2 lists, is a 2x2 matrix of [[a, b], [c, d]].
+    vec: The length 2 tensor, a vector of [e, f].
+  Returns:
+    matmul(m^{-1}, vec).
+  """
+  a = m[0][0]
+  b = m[0][1]
+  c = m[1][0]
+  d = m[1][1]
+  inv_m_det = 1.0 / (a * d - b * c)
+  m_inverse = torch.tensor([
+      [d * inv_m_det, -b * inv_m_det],
+      [-c * inv_m_det, a * inv_m_det]
+  ])
+  return torch.mm(m_inverse, vec)

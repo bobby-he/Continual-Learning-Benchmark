@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from types import MethodType
 import models
-from utils.metric import accuracy, AverageMeter, Timer
+from utils.metric import accuracy, AverageMeter, Timer, ip, _two_by_two_solve
 from optimizers.optimizers import QModelOpt
 
 class JlNN(nn.Module):
@@ -25,13 +25,17 @@ class JlNN(nn.Module):
         self.config = agent_config
         # If out_dim is a dict, there is a list of tasks. The model will have a head for each task.
         self.multihead = True if len(self.config['out_dim'])>1 else False  # A convenience flag to indicate multi-head/task
-        self.model = self.create_model()
-        self.criterion_fn = nn.CrossEntropyLoss()
+        self.first_update = True
         if agent_config['gpuid'][0] >= 0:
-            self.cuda()
             self.gpu = True
         else:
             self.gpu = False
+        
+        self.model = self.create_model()
+        self.criterion_fn = nn.CrossEntropyLoss()
+        self.sig_fn = torch.sigmoid
+        if agent_config['gpuid'][0] >= 0:
+            self.cuda()
         self.init_optimizer()
         self.reset_optimizer = False
         self.valid_out_dim = 'ALL'  # Default: 'ALL' means all output nodes are active
@@ -49,17 +53,18 @@ class JlNN(nn.Module):
 
         # Define the backbone (MLP, LeNet, VGG, ResNet ... etc) of model
         model = models.__dict__[cfg['model_type']].__dict__[cfg['model_name']]()
-
+        print(model.damping)
         # Apply network surgery to the backbone
         # Create the heads for tasks (It can be single task or multi-task)
         n_feat = model.last.in_features
-
+        
         # The output of the model will be a dict: {task_name1:output1, task_name2:output2 ...}
         # For a single-headed model the output will be {'All':output}
         model.last = nn.ModuleDict()
         for task,out_dim in cfg['out_dim'].items():
-            model.last[task] = nn.Linear(n_feat,out_dim)
-
+            model.last[task] = model.JlLinear(n_feat,out_dim, layer_idx = 2, use_cuda = self.gpu)
+            model.fs[-1] = out_dim
+        model.new_proj()
         # Redefine the task-dependent function
         def new_logits(self, x):
             outputs = {}
@@ -135,12 +140,86 @@ class JlNN(nn.Module):
         return loss
 
     def update_model(self, inputs, targets, tasks):
-        out = self.forward(inputs)
-        loss = self.criterion(out, targets, tasks)
+        batch_size = len(targets)
+        #print('batch_size {}'.format(batch_size))
+        output_logits = self.forward(inputs)
+        with torch.no_grad():
+          output_probs = self.sig_fn(output_logits['All'])
+          #print('hehe')
+          mft_sqrt_factor = torch.sqrt(output_probs) # this is cheating, only for the not multihead case
+        # capturing U_proj
         self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        return loss.detach(), out
+        model_dist = torch.distributions.multinomial.Categorical(logits = output_logits['All'].data)
+        model_samples = model_dist.sample()
+        sampled_loss = self.criterion(output_logits, model_samples, tasks)
+        sampled_loss.backward(retain_graph = True)
+        
+        # capturing grad_proj
+        self.optimizer.zero_grad()
+        true_loss = self.criterion(output_logits, targets, tasks)
+        true_loss.backward(retain_graph = True)
+        
+        # actually compute updates
+        self.optimizer.zero_grad()
+        true_loss.backward(retain_graph = True)
+        
+        # compute learning rate and momentum parameter
+        dummy = torch.zeros_like(output_logits['All'])
+        dummy.requires_grad = True
+        if self.gpu:
+          dummy = dummy.cuda()
+          
+        g = torch.autograd.grad(output_logits['All'], self.model.parameters(), grad_outputs = dummy, create_graph = True)
+        
+        jvp_precon = torch.autograd.grad(g, dummy, grad_outputs = self.model.precon_update_list, retain_graph = True)
+        
+        with torch.no_grad():
+          mft_precon_temp = mft_sqrt_factor * jvp_precon[0]
+          mft_precon = mft_precon_temp - output_probs * torch.sum(mft_precon_temp, dim = 1, keepdim = True)
+          
+          b_11 = self.model.damping * ip(self.model.precon_update_list, self.model.precon_update_list)
+          m_11 = torch.sum(mft_precon * mft_precon) / batch_size
+          c_1 = ip(self.model.grad_list, self.model.precon_update_list)
+        
+        if self.first_update:
+          alpha = -1 * c_1 / (b_11 + m_11)
+          self.optimizer.momentum = 0
+          assert (alpha>=0), 'Looks like you have a negative learning rate noob!'
+          self.optimizer.lr = alpha
+          self.optimizer.momentum = 0
+          assert (self.optimizer.prev_update_list[0] is None)
+          self.optimizer.step()
+          self.first_update = False
+          
+        else:
+          jvp_prev = torch.autograd.grad(g, dummy, grad_outputs = self.optimizer.prev_update_list)
+
+          with torch.no_grad():
+            b_21 = self.model.damping * ip(self.model.precon_update_list, self.optimizer.prev_update_list)
+            b_22 = self.model.damping * ip(self.optimizer.prev_update_list, self.optimizer.prev_update_list)
+        
+            mft_prev_temp = mft_sqrt_factor * jvp_prev[0]
+            mft_prev = mft_prev_temp - output_probs * torch.sum(mft_prev_temp, dim = 1, keepdim = True)
+          
+          m_21 = torch.sum(mft_precon * mft_prev) / batch_size
+          m_22 = torch.sum(mft_prev * mft_prev) / batch_size
+          
+          c_2 = ip(self.model.grad_list, self.optimizer.prev_update_list)
+          c = torch.tensor([[c_1], [c_2]])
+          m = [[m_11 + b_11, m_21 + b_21],
+              [m_21 + b_21, m_22 + b_22]]
+              
+          sol = -1. * _two_by_two_solve(m, c)
+          
+          alpha = sol[0, 0]
+          momentum = sol[1, 0]
+
+          self.optimizer.lr = alpha
+          self.optimizer.momentum = momentum
+          
+          self.optimizer.step()
+        
+        return true_loss.detach(), output_logits
 
     def learn_batch(self, train_loader, val_loader=None):
         if self.reset_optimizer:  # Reset optimizer before learning each task
@@ -167,7 +246,8 @@ class JlNN(nn.Module):
             batch_timer.tic()
             self.log('Itr\t\tTime\t\t  Data\t\t  Loss\t\tAcc')
             for i, (input, target, task) in enumerate(train_loader):
-
+                self.model.new_proj()
+                
                 data_time.update(data_timer.toc())  # measure data loading time
 
                 if self.gpu:

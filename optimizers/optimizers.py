@@ -24,7 +24,8 @@ class QModelOpt(Optimizer):
       if nesterov and (momentum <= 0 or dampening != 0):
           raise ValueError("Nesterov momentum requires a momentum and zero dampening")
       super(QModelOpt, self).__init__(params, defaults)
-      self.n = len(self.param_groups[0])
+      self.n = len(self.param_groups[0]['params'])
+      print(self.n)
       self.prev_update_list = [None] * self.n
 
 

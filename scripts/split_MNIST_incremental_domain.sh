@@ -1,6 +1,6 @@
 GPUID=$1
 OUTDIR=outputs/split_MNIST_incremental_domain
-REPEAT=10
+REPEAT=1
 mkdir -p $OUTDIR
 python3 -u iBatchLearn.py --gpuid $GPUID --repeat $REPEAT --optimizer Adam    --force_out_dim 2 --first_split_size 2 --other_split_size 2 --schedule 4 --batch_size 128 --model_name MLP400                                              --lr 0.001 --offline_training  | tee ${OUTDIR}/Offline.log
 python3 -u iBatchLearn.py --gpuid $GPUID --repeat $REPEAT --optimizer Adam    --force_out_dim 2 --first_split_size 2 --other_split_size 2 --schedule 4 --batch_size 128 --model_name MLP400                                              --lr 0.001                     | tee ${OUTDIR}/Adam.log
