@@ -74,7 +74,7 @@ def jl_kfac_gaussian_proj_mats(fs, q = 2000, use_cuda = True):
 
 
 class JlNet(nn.Module):
-  def __init__(self, out_dim = 10, in_channel = 1, img_sz = 32, hidden_dim = 256, use_cuda = True, pre_reg_mat_decay = 0.9, damping = 150, proj_dim = 1000):
+  def __init__(self, out_dim = 10, in_channel = 1, img_sz = 32, hidden_dim = 256, use_cuda = True, pre_reg_mat_decay = 0.9, initial_damping = 1, proj_dim = 1000):
     super(JlNet, self).__init__()
     self.in_dim = in_channel * img_sz * img_sz
     self.fs = [self.in_dim, hidden_dim, hidden_dim, out_dim]
@@ -84,11 +84,17 @@ class JlNet(nn.Module):
     self.grads_proj = [None] * 1
     self.pre_proj = [None] * 1
     self.initialize = [True] * 1
+    self.initialize_list = [True] * self.n
     self.pre_reg_mat = [None] * 1
+    self.AU_AU = [None] * 1
     self.precon_update_list = [None] * self.n
     self.grad_list = [None] * self.n 
+    self.Bs = [None] * self.n
+    self.As = [None] * self.n
+    self.acts_proj = [None] * self.n
+    self.preact_grads_proj = [None] * self.n
     self.pre_reg_mat_decay = pre_reg_mat_decay
-    self.damping = damping
+    self.damping = self.initial_damping = initial_damping
     self.use_cuda = use_cuda
 ##############################################################
     class JlngAddmm(Function):
@@ -122,33 +128,33 @@ class JlNet(nn.Module):
         # A has shape batch_size x w_in 
         # B has shape batch_size x w_out
         if ctx.mode == 'U_proj_capture':
-          if i == self.n - 1:
-            self.U_proj[0] = ((self.A_proj[i] @ A.t()) * (self.B_proj[i] @ (B.t() * batch_size)))/ batch_size_sqrt
+          #if i == self.n - 1:
+            #self.U_proj[0] = ((self.A_proj[i] @ A.t()) * (self.B_proj[i] @ (B.t() * batch_size)))/ batch_size_sqrt
 				    
-          else:
-            self.U_proj[0]  += ((self.A_proj[i] @ A.t()) * (self.B_proj[i] @ (B.t() * batch_size))) / batch_size_sqrt
+          #else:
+            #self.U_proj[0]  += ((self.A_proj[i] @ A.t()) * (self.B_proj[i] @ (B.t() * batch_size))) / batch_size_sqrt
 
           # update the pre_reg_mat at i==0 i.e. when U_proj complete
-          if i == 0:
+          #if i == 0:
             
-            if self.initialize[0]:
+            #if self.initialize[0]:
               #print('acidic')
-              self.pre_reg_mat[0] = self.U_proj[0] @ self.U_proj[0].t()
-              self.initialize[0] = False
-            else:
-              self.pre_reg_mat[0] = self.pre_reg_mat_decay * self.pre_reg_mat[0] + (1 - self.pre_reg_mat_decay) * (self.U_proj[0] @ self.U_proj[0].t()) # shape q x q
+              #self.pre_reg_mat[0] = self.U_proj[0] @ self.U_proj[0].t()
+              #self.initialize[0] = False
+            #else:
+              #self.pre_reg_mat[0] = self.pre_reg_mat_decay * self.pre_reg_mat[0] + (1 - self.pre_reg_mat_decay) * (self.U_proj[0] @ self.U_proj[0].t()) # shape q x q
         
-          #if initialize_list[i]:
+          if self.initialize_list[i]:
             #print(i)
 
-            #Bs[i] = B.t() @ B     # store pre-activation derivatives and activations for later
+            self.Bs[i] = B.t() @ B     # store pre-activation derivatives and activations for later
 
-            #As[i] = A.t() @ A
-            #initialize_list[i] = False
-          #else:    
+            self.As[i] = A.t() @ A
+            self.initialize_list[i] = False
+          else:    
             #print('lol')
-            #Bs[i] = pre_reg_mat_decay * Bs[i] + (1 - pre_reg_mat_decay) * B.t() @ B
-            #As[i] = pre_reg_mat_decay * As[i] + (1 - pre_reg_mat_decay) * A.t() @ A	
+            self.Bs[i] = self.pre_reg_mat_decay * self.Bs[i] + (1 - self.pre_reg_mat_decay) * B.t() @ B
+            self.As[i] = self.pre_reg_mat_decay * self.As[i] + (1 - self.pre_reg_mat_decay) * A.t() @ A	
           ctx.mode = 'grads_proj_capture'
             
         elif ctx.mode == 'grads_proj_capture':
@@ -161,28 +167,28 @@ class JlNet(nn.Module):
           else:
             self.grads_proj[0] += torch.mean((self.A_proj[i] @ A.t()) * (self.B_proj[i] @ (B.t() * batch_size)), dim = 1)
             
-          #acts_proj[i] = (A_proj[i] @ (As[i]/ batch_size)) # shape q x w_in
-          #preact_grads_proj[i] = (B_proj[i] @ (Bs[i] * batch_size)) # shape q x w_out
+          self.acts_proj[i] = (self.A_proj[i] @ (self.As[i]/ batch_size)) # shape q x w_in
+          self.preact_grads_proj[i] = (self.B_proj[i] @ (self.Bs[i] * batch_size)) # shape q x w_out
           
-          #if i == n-1:
-            #AU_AU[0] = ((A_proj[i] @ acts_proj[i].t()) * (B_proj[i] @ preact_grads_proj[i].t()))
-          #else:
-            #AU_AU[0] += ((A_proj[i] @ acts_proj[i].t()) * (B_proj[i] @ preact_grads_proj[i].t()))
+          if i == self.n-1:
+            self.AU_AU[0] = ((self.A_proj[i] @ self.acts_proj[i].t()) * (self.B_proj[i] @ self.preact_grads_proj[i].t()))
+          else:
+            self.AU_AU[0] += ((self.A_proj[i] @ self.acts_proj[i].t()) * (self.B_proj[i] @ self.preact_grads_proj[i].t()))
           ctx.mode = 'jlng'
         elif ctx.mode == 'jlng':
           grads_pre_fisher = A.t() @ B # already normalised as B is divided by batch_size
           # only compute the grad coefficients once
 
           if i == self.n-1:
-            #approx_kmat_cho = regularized_cholesky_factor(AU_AU[0], lambda_ = damping)
-            approx_kmat_cho = regularized_cholesky_factor(self.pre_reg_mat[0], lambda_ = self.damping)
+            approx_kmat_cho = regularized_cholesky_factor(self.AU_AU[0], lambda_ = self.damping)
+            #approx_kmat_cho = regularized_cholesky_factor(self.pre_reg_mat[0], lambda_ = self.damping)
             temp = torch.from_numpy(cho_solve((approx_kmat_cho.cpu().numpy(), True), self.grads_proj[0].view(-1, 1).cpu().numpy()))        
             if self.use_cuda:
               temp = temp.cuda()
               
             #grad_coeffs[0] = U_proj[0].t() @ temp # no ema method
-            #pre_proj[0] = AU_AU[0] @ temp[0] #  
-            self.pre_proj[0] = self.pre_reg_mat[0] @ temp
+            self.pre_proj[0] = self.AU_AU[0] @ temp #  
+            #self.pre_proj[0] = self.pre_reg_mat[0] @ temp
           #temp = (Bs[i] / batch_size_sqrt) * grad_coeffs[0] # no ema method
           #grad_subtract = As[i].t() @ temp 
 
@@ -200,7 +206,7 @@ class JlNet(nn.Module):
           A_temp = self.A_proj[i] * self.pre_proj[0]
           grad_subtract = (A_temp.t() @ self.B_proj[i]) * self.proj_dim #* norm_ratio
           
-          update = grads_pre_fisher_test #- grad_subtract 
+          update = grads_pre_fisher_test - grad_subtract 
           #if i == 0:
             #update_norm = torch.sum(update ** 2)
             #print(norm_ratio)
@@ -299,6 +305,13 @@ class JlNet(nn.Module):
   def new_proj(self):
     self.A_proj, self.B_proj = jl_kfac_gaussian_proj_mats(self.fs, q = self.proj_dim, use_cuda = self.use_cuda)
     self.initialize[0] = True
+    
+  def reset_damping(self):
+    self.damping = self.initial_damping
+    
+  def reset_kfac_ema(self):
+    self.initialize_list = [True] * self.n
+    
   def features(self, x):
     x = self.linear(x.view(-1, self.in_dim))
     return x

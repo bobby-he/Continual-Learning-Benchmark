@@ -45,8 +45,8 @@ class JlNN(nn.Module):
         optimizer_arg = {'params':self.model.parameters(),
                          'lr':self.config['lr']}
         self.optimizer = QModelOpt(**optimizer_arg)
-        self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=self.config['schedule'],
-                                                              gamma=0.1)
+        #self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=self.config['schedule'],
+                                                              #gamma=0.1)
 
     def create_model(self):
         cfg = self.config
@@ -147,6 +147,7 @@ class JlNN(nn.Module):
           output_probs = self.sig_fn(output_logits['All'])
           #print('hehe')
           mft_sqrt_factor = torch.sqrt(output_probs) # this is cheating, only for the not multihead case
+          
         # capturing U_proj
         self.optimizer.zero_grad()
         model_dist = torch.distributions.multinomial.Categorical(logits = output_logits['All'].data)
@@ -225,7 +226,8 @@ class JlNN(nn.Module):
         if self.reset_optimizer:  # Reset optimizer before learning each task
             self.log('Optimizer is reset!')
             self.init_optimizer()
-
+        self.model.reset_damping()
+        self.model.reset_kfac_ema()
         for epoch in range(self.config['schedule'][-1]):
             data_timer = Timer()
             batch_timer = Timer()
@@ -237,7 +239,7 @@ class JlNN(nn.Module):
             # Config the model and optimizer
             self.log('Epoch:{0}'.format(epoch))
             self.model.train()
-            self.scheduler.step(epoch)
+            #self.scheduler.step(epoch)
             for param_group in self.optimizer.param_groups:
                 self.log('LR:',param_group['lr'])
 
