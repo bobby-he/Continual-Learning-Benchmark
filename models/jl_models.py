@@ -74,7 +74,7 @@ def jl_kfac_gaussian_proj_mats(fs, q = 2000, use_cuda = True):
 
 
 class JlNet(nn.Module):
-  def __init__(self, out_dim = 10, in_channel = 1, img_sz = 32, hidden_dim = 256, use_cuda = True, pre_reg_mat_decay = 0.9, initial_damping = 1, proj_dim = 1000):
+  def __init__(self, out_dim = 10, in_channel = 1, img_sz = 32, hidden_dim = 256, use_cuda = True, pre_reg_mat_decay = 0.9, initial_damping = 150, proj_dim = 1000):
     super(JlNet, self).__init__()
     self.in_dim = in_channel * img_sz * img_sz
     self.fs = [self.in_dim, hidden_dim, hidden_dim, out_dim]

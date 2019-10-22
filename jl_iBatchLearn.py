@@ -114,11 +114,11 @@ def get_args(argv):
     parser.add_argument('--rand_split_order', dest='rand_split_order', default=False, action='store_true',
                         help="Randomize the order of splits")
     parser.add_argument('--workers', type=int, default=3, help="#Thread for dataloader")
-    parser.add_argument('--batch_size', type=int, default=10000)
+    parser.add_argument('--batch_size', type=int, default=100)
     parser.add_argument('--lr', type=float, default=0.01, help="Learning rate")
     parser.add_argument('--momentum', type=float, default=0)
     parser.add_argument('--weight_decay', type=float, default=0)
-    parser.add_argument('--schedule', nargs="+", type=int, default=[50],
+    parser.add_argument('--schedule', nargs="+", type=int, default=[4],
                         help="The list of epoch numbers to reduce learning rate by factor of 0.1. Last number is the end epoch")
     parser.add_argument('--print_freq', type=float, default=100, help="Print the log at every x iteration")
     parser.add_argument('--model_weights', type=str, default=None,
