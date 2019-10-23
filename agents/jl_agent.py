@@ -178,7 +178,7 @@ class JlNN(nn.Module):
           mft_precon_temp = mft_sqrt_factor * jvp_precon[0]
           mft_precon = mft_precon_temp - output_probs * torch.sum(mft_precon_temp, dim = 1, keepdim = True)
           
-          b_11 = 60 * ip(self.model.precon_update_list, self.model.precon_update_list)
+          b_11 = 100 * ip(self.model.precon_update_list, self.model.precon_update_list)
           m_11 = torch.sum(mft_precon * mft_precon) / batch_size
           c_1 = ip(self.model.grad_list, self.model.precon_update_list)
         
@@ -197,8 +197,8 @@ class JlNN(nn.Module):
           jvp_prev = torch.autograd.grad(g, dummy, grad_outputs = self.optimizer.prev_update_list)
 
           with torch.no_grad():
-            b_21 = 60 * ip(self.model.precon_update_list, self.optimizer.prev_update_list)
-            b_22 = 60 * ip(self.optimizer.prev_update_list, self.optimizer.prev_update_list)
+            b_21 = 100 * ip(self.model.precon_update_list, self.optimizer.prev_update_list)
+            b_22 = 100 * ip(self.optimizer.prev_update_list, self.optimizer.prev_update_list)
         
             mft_prev_temp = mft_sqrt_factor * jvp_prev[0]
             mft_prev = mft_prev_temp - output_probs * torch.sum(mft_prev_temp, dim = 1, keepdim = True)
