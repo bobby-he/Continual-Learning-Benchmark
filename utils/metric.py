@@ -87,3 +87,6 @@ def _two_by_two_solve(m, vec):
       [-c * inv_m_det, a * inv_m_det]
   ])
   return torch.mm(m_inverse, vec)
+  
+def _eval_quadratic_no_c(m, vec):
+  return 0.5 * vec.t() @ m @ vec

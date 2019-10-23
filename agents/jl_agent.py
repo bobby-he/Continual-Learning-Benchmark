@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from types import MethodType
 import models
-from utils.metric import accuracy, AverageMeter, Timer, ip, _two_by_two_solve
+from utils.metric import accuracy, AverageMeter, Timer, ip, _two_by_two_solve, _eval_quadratic_no_c
 from optimizers.optimizers import QModelOpt
 
 class JlNN(nn.Module):
@@ -37,7 +37,7 @@ class JlNN(nn.Module):
         if agent_config['gpuid'][0] >= 0:
             self.cuda()
         self.init_optimizer()
-        self.reset_optimizer = False
+        self.reset_optimizer = True
         self.valid_out_dim = 'ALL'  # Default: 'ALL' means all output nodes are active
                                     # Set a interger here for the incremental class scenario
 
@@ -53,7 +53,7 @@ class JlNN(nn.Module):
 
         # Define the backbone (MLP, LeNet, VGG, ResNet ... etc) of model
         model = models.__dict__[cfg['model_type']].__dict__[cfg['model_name']]()
-        print(model.damping)
+        #print(model.damping)
         # Apply network surgery to the backbone
         # Create the heads for tasks (It can be single task or multi-task)
         n_feat = model.last.in_features
@@ -178,17 +178,18 @@ class JlNN(nn.Module):
           mft_precon_temp = mft_sqrt_factor * jvp_precon[0]
           mft_precon = mft_precon_temp - output_probs * torch.sum(mft_precon_temp, dim = 1, keepdim = True)
           
-          b_11 = self.model.damping * ip(self.model.precon_update_list, self.model.precon_update_list)
+          b_11 = 50 * ip(self.model.precon_update_list, self.model.precon_update_list)
           m_11 = torch.sum(mft_precon * mft_precon) / batch_size
           c_1 = ip(self.model.grad_list, self.model.precon_update_list)
         
         if self.first_update:
+          print('yo')
           alpha = -1 * c_1 / (b_11 + m_11)
           self.optimizer.momentum = 0
           assert (alpha>=0), 'Looks like you have a negative learning rate noob!'
           self.optimizer.lr = alpha
           self.optimizer.momentum = 0
-          assert (self.optimizer.prev_update_list[0] is None)
+          #assert (self.optimizer.prev_update_list[0] is None)
           self.optimizer.step()
           self.first_update = False
           
@@ -196,8 +197,8 @@ class JlNN(nn.Module):
           jvp_prev = torch.autograd.grad(g, dummy, grad_outputs = self.optimizer.prev_update_list)
 
           with torch.no_grad():
-            b_21 = self.model.damping * ip(self.model.precon_update_list, self.optimizer.prev_update_list)
-            b_22 = self.model.damping * ip(self.optimizer.prev_update_list, self.optimizer.prev_update_list)
+            b_21 = 50 * ip(self.model.precon_update_list, self.optimizer.prev_update_list)
+            b_22 = 50 * ip(self.optimizer.prev_update_list, self.optimizer.prev_update_list)
         
             mft_prev_temp = mft_sqrt_factor * jvp_prev[0]
             mft_prev = mft_prev_temp - output_probs * torch.sum(mft_prev_temp, dim = 1, keepdim = True)
@@ -206,14 +207,14 @@ class JlNN(nn.Module):
           m_22 = torch.sum(mft_prev * mft_prev) / batch_size
           
           c_2 = ip(self.model.grad_list, self.optimizer.prev_update_list)
-          c = torch.tensor([[c_1], [c_2]])
+          self.c = torch.tensor([[c_1], [c_2]])
           m = [[m_11 + b_11, m_21 + b_21],
               [m_21 + b_21, m_22 + b_22]]
-              
-          sol = -1. * _two_by_two_solve(m, c)
+          self.b = [[b_11, b_21], [b_21, b_22]]
+          self.sol = -1. * _two_by_two_solve(m, self.c)
           
-          alpha = sol[0, 0]
-          momentum = sol[1, 0]
+          alpha = self.sol[0, 0]
+          momentum = self.sol[1, 0]
 
           self.optimizer.lr = alpha
           self.optimizer.momentum = momentum
@@ -221,13 +222,32 @@ class JlNN(nn.Module):
           self.optimizer.step()
         
         return true_loss.detach(), output_logits
+        
+    def update_damping(self, inputs, targets, tasks, old_loss):
 
+        with torch.no_grad():
+          new_output_logits = self.model(inputs)
+        new_loss = self.criterion(new_output_logits, targets, tasks)
+        new_loss0 = new_loss.data
+        qmodel_change = 0.5 * torch.sum(self.sol * self.c)
+        qmodel_change -= _eval_quadratic_no_c(torch.tensor(self.b), torch.tensor(self.sol))[0,0]
+        loss_change = new_loss - old_loss
+        rho = loss_change / qmodel_change
+        
+        if (rho > 0.75) or (loss_change < 0 and qmodel_change > 0):
+          self.model.damping *= self.model.omega
+        elif rho < 0.25:
+          self.model.damping /= self.model.omega
+        
+        self.model.damping = max(self.model.damping, self.model.min_damp)
+        
     def learn_batch(self, train_loader, val_loader=None):
         if self.reset_optimizer:  # Reset optimizer before learning each task
             self.log('Optimizer is reset!')
             self.init_optimizer()
         self.model.reset_damping()
         self.model.reset_kfac_ema()
+        self.first_update = True
         for epoch in range(self.config['schedule'][-1]):
             data_timer = Timer()
             batch_timer = Timer()
@@ -257,6 +277,9 @@ class JlNN(nn.Module):
                     target = target.cuda()
 
                 loss, output = self.update_model(input, target, task)
+                #if (i+1) % self.model.damping_update_period == 0 or (i+1) == len(train_loader):
+                    #self.update_damping(input, target, task, loss)
+                
                 input = input.detach()
                 target = target.detach()
 

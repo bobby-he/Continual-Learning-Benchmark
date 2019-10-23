@@ -114,7 +114,7 @@ def get_args(argv):
     parser.add_argument('--rand_split_order', dest='rand_split_order', default=False, action='store_true',
                         help="Randomize the order of splits")
     parser.add_argument('--workers', type=int, default=3, help="#Thread for dataloader")
-    parser.add_argument('--batch_size', type=int, default=100)
+    parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--lr', type=float, default=0.01, help="Learning rate")
     parser.add_argument('--momentum', type=float, default=0)
     parser.add_argument('--weight_decay', type=float, default=0)

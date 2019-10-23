@@ -74,7 +74,7 @@ def jl_kfac_gaussian_proj_mats(fs, q = 2000, use_cuda = True):
 
 
 class JlNet(nn.Module):
-  def __init__(self, out_dim = 10, in_channel = 1, img_sz = 32, hidden_dim = 256, use_cuda = True, pre_reg_mat_decay = 0.9, initial_damping = 150, proj_dim = 1000):
+  def __init__(self, out_dim = 10, in_channel = 1, img_sz = 32, hidden_dim = 256, use_cuda = True, pre_reg_mat_decay = 0.9, initial_damping = 0.05, min_damp = 1, proj_dim = 1000, damping_update_period = 5):
     super(JlNet, self).__init__()
     self.in_dim = in_channel * img_sz * img_sz
     self.fs = [self.in_dim, hidden_dim, hidden_dim, out_dim]
@@ -96,6 +96,9 @@ class JlNet(nn.Module):
     self.pre_reg_mat_decay = pre_reg_mat_decay
     self.damping = self.initial_damping = initial_damping
     self.use_cuda = use_cuda
+    self.damping_update_period = damping_update_period
+    self.min_damp = min_damp
+    self.omega = 0.95 ** self.damping_update_period
 ##############################################################
     class JlngAddmm(Function):
       @staticmethod
@@ -146,7 +149,7 @@ class JlNet(nn.Module):
         
           if self.initialize_list[i]:
             #print(i)
-
+            #print('hello')
             self.Bs[i] = B.t() @ B     # store pre-activation derivatives and activations for later
 
             self.As[i] = A.t() @ A
@@ -180,7 +183,7 @@ class JlNet(nn.Module):
           # only compute the grad coefficients once
 
           if i == self.n-1:
-            approx_kmat_cho = regularized_cholesky_factor(self.AU_AU[0], lambda_ = self.damping)
+            approx_kmat_cho = regularized_cholesky_factor(self.AU_AU[0], lambda_ = self.damping/self.proj_dim)
             #approx_kmat_cho = regularized_cholesky_factor(self.pre_reg_mat[0], lambda_ = self.damping)
             temp = torch.from_numpy(cho_solve((approx_kmat_cho.cpu().numpy(), True), self.grads_proj[0].view(-1, 1).cpu().numpy()))        
             if self.use_cuda:
@@ -199,7 +202,7 @@ class JlNet(nn.Module):
           grads_pre_fisher_test = (test.t() @ self.B_proj[i]) * self.proj_dim
           
           #grads_pre_fisher_norm = torch.sum(grads_pre_fisher ** 2)
-          #grads_pre_fisher_test_norm = torch.sum(grads_pre_fisher_test ** 2)
+          grads_pre_fisher_test_norm = torch.sum(grads_pre_fisher_test ** 2)
           
           #norm_ratio = torch.sqrt(grads_pre_fisher_norm/grads_pre_fisher_test_norm)
           
@@ -211,7 +214,7 @@ class JlNet(nn.Module):
             #update_norm = torch.sum(update ** 2)
             #print(norm_ratio)
 
-            #print(i, (torch.sum(grad_subtract**2)/grads_pre_fisher_norm).item())
+            #print(i, (torch.sum(grad_subtract**2)/grads_pre_fisher_test_norm).item())
             #print(i, (grads_pre_fisher_test_norm/grads_pre_fisher_norm).item())
             #print((update_norm / grads_pre_fisher_norm).item())
             #print(i, (torch.sum(update * grads_pre_fisher)/torch.sqrt(update_norm)/torch.sqrt(grads_pre_fisher_norm)).item())
@@ -308,6 +311,7 @@ class JlNet(nn.Module):
     
   def reset_damping(self):
     self.damping = self.initial_damping
+    print(self.damping)
     
   def reset_kfac_ema(self):
     self.initialize_list = [True] * self.n
