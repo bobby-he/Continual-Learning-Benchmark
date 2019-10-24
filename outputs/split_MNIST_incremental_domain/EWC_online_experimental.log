@@ -1,0 +1,45 @@
+split_boundaries: [0, 2, 4, 6, 8, 10]
+{'1': [0, 1], '2': [2, 3], '3': [4, 5], '4': [6, 7], '5': [8, 9]}
+6
+6
+MLP(
+  (linear): Sequential(
+    (0): Linear(in_features=1024, out_features=400, bias=True)
+    (1): ReLU(inplace=True)
+    (2): Linear(in_features=400, out_features=400, bias=True)
+    (3): ReLU(inplace=True)
+  )
+  (last): ModuleDict(
+    (All): Linear(in_features=400, out_features=2, bias=True)
+  )
+)
+#parameter of model: 571202
+Task order: ['1', '2', '3', '4', '5']
+====================== 1 =======================
+#reg_term: 0
+Epoch:0
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+yo
+[0/99]	0.1143 (0.1143)	0.1011 (0.1011)	0.700 (0.700)	43.75 (43.75)
+[98/99]	0.0093 (0.0092)	0.0012 (0.0023)	0.354 (0.527)	100.00 (94.50)
+ * Train Acc 94.497
+ * Val Acc 99.764, Total time 0.22
+Epoch:1
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/99]	0.0904 (0.0904)	0.0816 (0.0816)	0.373 (0.373)	100.00 (100.00)
+[98/99]	0.0079 (0.0090)	0.0011 (0.0022)	0.177 (0.264)	100.00 (99.66)
+ * Train Acc 99.660
+ * Val Acc 99.811, Total time 0.22
+Epoch:2
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/99]	0.0927 (0.0927)	0.0827 (0.0827)	0.179 (0.179)	100.00 (100.00)
+[98/99]	0.0076 (0.0090)	0.0011 (0.0023)	0.102 (0.130)	98.35 (99.68)
+ * Train Acc 99.684
+ * Val Acc 99.811, Total time 0.22
+Epoch:3
+LR: 0.001
+Itr		Time		  Data		  Loss		Acc
+[0/99]	0.0904 (0.0904)	0.0806 (0.0806)	0.086 (0.086)	100.00 (100.00)
