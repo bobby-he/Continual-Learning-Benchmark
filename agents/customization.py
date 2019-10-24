@@ -1,6 +1,6 @@
 import torch
 from .default import NormalNN
-from .regularization import SI, EWC, EWC_online
+from .experimental_regularization import SI, EWC, EWC_online
 from .exp_replay import Naive_Rehearsal, GEM
 from modules.criterions import BCEauto
 

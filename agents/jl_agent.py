@@ -53,6 +53,7 @@ class JlNN(nn.Module):
 
         # Define the backbone (MLP, LeNet, VGG, ResNet ... etc) of model
         model = models.__dict__[cfg['model_type']].__dict__[cfg['model_name']]()
+        model.damping = model.initial_damping = cfg['damping']
         #print(model.damping)
         # Apply network surgery to the backbone
         # Create the heads for tasks (It can be single task or multi-task)
@@ -178,7 +179,7 @@ class JlNN(nn.Module):
           mft_precon_temp = mft_sqrt_factor * jvp_precon[0]
           mft_precon = mft_precon_temp - output_probs * torch.sum(mft_precon_temp, dim = 1, keepdim = True)
           
-          b_11 = 90 * ip(self.model.precon_update_list, self.model.precon_update_list)
+          b_11 = self.config['reg_coef'] * ip(self.model.precon_update_list, self.model.precon_update_list)
           m_11 = torch.sum(mft_precon * mft_precon) / batch_size
           c_1 = ip(self.model.grad_list, self.model.precon_update_list)
         
@@ -188,7 +189,7 @@ class JlNN(nn.Module):
           self.optimizer.momentum = 0
           assert (alpha>=0), 'Looks like you have a negative learning rate noob!'
           self.optimizer.lr = alpha
-          self.optimizer.momentum = 0
+
           #assert (self.optimizer.prev_update_list[0] is None)
           self.optimizer.step()
           self.first_update = False
@@ -197,8 +198,8 @@ class JlNN(nn.Module):
           jvp_prev = torch.autograd.grad(g, dummy, grad_outputs = self.optimizer.prev_update_list)
 
           with torch.no_grad():
-            b_21 = 90 * ip(self.model.precon_update_list, self.optimizer.prev_update_list)
-            b_22 = 90 * ip(self.optimizer.prev_update_list, self.optimizer.prev_update_list)
+            b_21 = self.config['reg_coef'] * ip(self.model.precon_update_list, self.optimizer.prev_update_list)
+            b_22 = self.config['reg_coef'] * ip(self.optimizer.prev_update_list, self.optimizer.prev_update_list)
         
             mft_prev_temp = mft_sqrt_factor * jvp_prev[0]
             mft_prev = mft_prev_temp - output_probs * torch.sum(mft_prev_temp, dim = 1, keepdim = True)

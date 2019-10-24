@@ -33,7 +33,8 @@ def run(args):
                     'out_dim':{'All':args.force_out_dim} if args.force_out_dim>0 else task_output_space,
                     'optimizer':args.optimizer,
                     'print_freq':args.print_freq, 'gpuid': args.gpuid,
-                    'reg_coef':args.reg_coef}
+                    'reg_coef':args.reg_coef,
+                    'damping': args.damping}
     agent = agents.__dict__[args.agent_type].__dict__[args.agent_name](agent_config)
     print(agent.model)
     print('#parameter of model:',agent.count_parameter())
@@ -123,7 +124,8 @@ def get_args(argv):
     parser.add_argument('--print_freq', type=float, default=100, help="Print the log at every x iteration")
     parser.add_argument('--model_weights', type=str, default=None,
                         help="The path to the file for the model weights (*.pth).")
-    parser.add_argument('--reg_coef', nargs="+", type=float, default=[0.], help="The coefficient for regularization. Larger means less plasilicity. Give a list for hyperparameter search.")
+    parser.add_argument('--reg_coef', nargs="+", type=float, default=[75., 85., 90., 95.], help="The coefficient for regularization. Larger means less plasilicity. Give a list for hyperparameter search.")
+    parser.add_argument('--damping', nargs="+", type=float, default=[0.1], help="The damping factor used in computation of Fisher estimate. Give a list for hyperparameter search")
     parser.add_argument('--eval_on_train_set', dest='eval_on_train_set', default=False, action='store_true',
                         help="Force the evaluation on train set")
     parser.add_argument('--offline_training', dest='offline_training', default=False, action='store_true',
@@ -137,37 +139,45 @@ def get_args(argv):
 if __name__ == '__main__':
     args = get_args(sys.argv[1:])
     reg_coef_list = args.reg_coef
+    damping_list = args.damping
     avg_final_acc = {}
-
+    
     # The for loops over hyper-paramerters or repeats
-    for reg_coef in reg_coef_list:
-        args.reg_coef = reg_coef
-        avg_final_acc[reg_coef] = np.zeros(args.repeat)
-        for r in range(args.repeat):
+    for damping in damping_list:  
+        print('damping: ', damping)  
+        for reg_coef in reg_coef_list:
+            args.reg_coef = reg_coef
+            args.damping = damping
+            avg_final_acc[damping] = {}
+            
+            avg_final_acc[damping][reg_coef] = np.zeros(args.repeat)
+            for r in range(args.repeat):
 
-            # Run the experiment
-            acc_table, task_names = run(args)
-            print(acc_table)
+                # Run the experiment
+                acc_table, task_names = run(args)
+                print(acc_table)
 
-            # Calculate average performance across tasks
-            # Customize this part for a different performance metric
-            avg_acc_history = [0] * len(task_names)
-            for i in range(len(task_names)):
-                train_name = task_names[i]
-                cls_acc_sum = 0
-                for j in range(i + 1):
-                    val_name = task_names[j]
-                    cls_acc_sum += acc_table[val_name][train_name]
-                avg_acc_history[i] = cls_acc_sum / (i + 1)
-                print('Task', train_name, 'average acc:', avg_acc_history[i])
+                # Calculate average performance across tasks
+                # Customize this part for a different performance metric
+                avg_acc_history = [0] * len(task_names)
+                for i in range(len(task_names)):
+                    train_name = task_names[i]
+                    cls_acc_sum = 0
+                    for j in range(i + 1):
+                        val_name = task_names[j]
+                        cls_acc_sum += acc_table[val_name][train_name]
+                    avg_acc_history[i] = cls_acc_sum / (i + 1)
+                    print('Task', train_name, 'average acc:', avg_acc_history[i])
 
-            # Gather the final avg accuracy
-            avg_final_acc[reg_coef][r] = avg_acc_history[-1]
+                # Gather the final avg accuracy
+                avg_final_acc[damping][reg_coef][r] = avg_acc_history[-1]
 
-            # Print the summary so far
-            print('===Summary of experiment repeats:',r+1,'/',args.repeat,'===')
-            print('The regularization coefficient:', args.reg_coef)
-            print('The last avg acc of all repeats:', avg_final_acc[reg_coef])
-            print('mean:', avg_final_acc[reg_coef].mean(), 'std:', avg_final_acc[reg_coef].std())
-    for reg_coef,v in avg_final_acc.items():
-        print('reg_coef:', reg_coef,'mean:', avg_final_acc[reg_coef].mean(), 'std:', avg_final_acc[reg_coef].std())
+                # Print the summary so far
+                print('===Summary of experiment repeats:',r+1,'/',args.repeat,'===')
+                print('The damping factor:', args.damping)
+                print('The regularization coefficient:', args.reg_coef)
+                print('The last avg acc of all repeats:', avg_final_acc[damping][reg_coef])
+                print('mean:', avg_final_acc[damping][reg_coef].mean(), 'std:', avg_final_acc[damping][reg_coef].std())
+    for damping, v in avg_final_acc.items():
+      for reg_coef in reg_coef_list:
+          print('damping:', damping, 'reg_coef:', reg_coef,'mean:', avg_final_acc[damping][reg_coef].mean(), 'std:', avg_final_acc[damping][reg_coef].std())
