@@ -8,6 +8,7 @@ from collections import OrderedDict
 import dataloaders.base
 from dataloaders.datasetGen import SplitGen, PermutedGen
 import agents
+import time
 
 
 def run(args):
@@ -137,6 +138,7 @@ def get_args(argv):
     return args
 
 if __name__ == '__main__':
+    start = time.time()
     args = get_args(sys.argv[1:])
     reg_coef_list = args.reg_coef
     damping_list = args.damping
@@ -178,6 +180,9 @@ if __name__ == '__main__':
                 print('The regularization coefficient:', args.reg_coef)
                 print('The last avg acc of all repeats:', avg_final_acc[damping][reg_coef])
                 print('mean:', avg_final_acc[damping][reg_coef].mean(), 'std:', avg_final_acc[damping][reg_coef].std())
-    for damping, v in avg_final_acc.items():
+    for damping in damping_list:
       for reg_coef in reg_coef_list:
           print('damping:', damping, 'reg_coef:', reg_coef,'mean:', avg_final_acc[damping][reg_coef].mean(), 'std:', avg_final_acc[damping][reg_coef].std())
+          
+    end = time.time()
+    print('Total time', end - start)
