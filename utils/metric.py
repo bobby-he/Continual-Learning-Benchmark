@@ -90,3 +90,29 @@ def _two_by_two_solve(m, vec):
   
 def _eval_quadratic_no_c(m, vec):
   return 0.5 * vec.t() @ m @ vec
+  
+
+def regularized_cholesky_factor(mat, lambda_, inverse_method='cpu',
+                        use_cuda=True):
+  # calculates and returns the regularised cholesky decomposition of a matrix
+  assert mat.shape[0] == mat.shape[1]
+  ii = torch.eye(mat.shape[0])
+  if use_cuda:
+    ii = ii.cuda()
+  regmat = mat + lambda_ * ii
+
+  if inverse_method == 'cpu':
+    #regmat = regmat.cpu()
+    #if mat.shape[0]<=1005:
+      #print(np.linalg.cond(regmat.numpy()))
+    #cho_factor = torch.cholesky(regmat, upper = False)
+    cho_factor = torch.cholesky(regmat.cpu(), upper = False)
+    if use_cuda:
+      cho_factor = cho_factor.cuda()
+  elif inverse_method == 'gpu':
+    assert use_cuda
+    cho_factor = torch.cholesky(regmat, upper = False) 
+  else:
+    assert False, 'unknown inverse_method ' + str(INVERSE_METHOD)
+
+  return cho_factor

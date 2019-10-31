@@ -99,6 +99,18 @@ class JlNet(nn.Module):
     self.damping_update_period = damping_update_period
     self.min_damp = min_damp
     self.omega = 0.95 ** self.damping_update_period
+    
+    self.projection_gradient_capture = False
+    self.initialize_task_gradients = [None] * 5
+    self.task_gradients = [None] * 5
+    self.task_natural_gradients = [None] * 5
+    for task_id in range(5):
+        self.initialize_task_gradients[task_id] = [True] * self.n
+        self.task_gradients[task_id] = [None] * self.n
+        self.task_natural_gradients[task_id] = [None] * self.n
+    self.task_grad_ips = [0] * 5
+    self.task_natural_grad_ips = [0] * 5
+    self.task_id = 0
 ##############################################################
     class JlngAddmm(Function):
       @staticmethod
@@ -178,6 +190,7 @@ class JlNet(nn.Module):
           else:
             self.AU_AU[0] += ((self.A_proj[i] @ self.acts_proj[i].t()) * (self.B_proj[i] @ self.preact_grads_proj[i].t()))
           ctx.mode = 'jlng'
+          
         elif ctx.mode == 'jlng':
           grads_pre_fisher = A.t() @ B # already normalised as B is divided by batch_size
           # only compute the grad coefficients once
@@ -209,7 +222,14 @@ class JlNet(nn.Module):
           A_temp = self.A_proj[i] * self.pre_proj[0]
           grad_subtract = (A_temp.t() @ self.B_proj[i]) * self.proj_dim #* norm_ratio
           
-          update = grads_pre_fisher_test - grad_subtract 
+          update = grads_pre_fisher_test #- grad_subtract 
+          
+          if self.projection_gradient_capture:
+              if self.initialize_task_gradients[self.task_id][i]:
+                  self.task_gradients[self.task_id][i] = grads_pre_fisher * batch_size
+                  self.initialize_task_gradients[self.task_id][i] = False
+              else:    
+                  self.task_gradients[self.task_id][i] += grads_pre_fisher * batch_size
           #if i == 0:
             #update_norm = torch.sum(update ** 2)
             #print(norm_ratio)
@@ -221,7 +241,7 @@ class JlNet(nn.Module):
           grad_matrix2 = Variable(update) / self.damping
 
           #print(torch.sum(grad_subtract **2), torch.sum(grads_pre_fisher **2), torch.sum(grad_matrix2 **2))
-          self.precon_update_list[i] = -1 * torch.clone(grad_matrix2).detach()
+          self.precon_update_list[i] = torch.clone(grad_matrix2).detach()
           self.grad_list[i] = torch.clone(grads_pre_fisher).detach()
           ctx.mode = 'standard'
 
@@ -306,9 +326,12 @@ class JlNet(nn.Module):
     self.last = JlLinear(hidden_dim, out_dim, layer_idx = 2, use_cuda = self.use_cuda)    
     
   def new_proj(self):
-    self.A_proj, self.B_proj = jl_kfac_gaussian_proj_mats(self.fs, q = self.proj_dim, use_cuda = self.use_cuda)
+    indices = np.random.choice(1000, self.proj_dim, replace=False)
+    self.A_proj, self.B_proj = [self.A_proj_superset[i][indices,:] for i in range(self.n)], [self.B_proj_superset[i][indices, :] for i in range(self.n)]
     self.initialize[0] = True
     
+  def sample_new_proj(self):
+    self.A_proj_superset, self.B_proj_superset = jl_kfac_gaussian_proj_mats(self.fs, q = 1000, use_cuda = self.use_cuda)
   def reset_damping(self):
     self.damping = self.initial_damping
     print(self.damping)

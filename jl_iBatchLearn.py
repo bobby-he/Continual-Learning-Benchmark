@@ -180,9 +180,12 @@ if __name__ == '__main__':
                 print('The regularization coefficient:', args.reg_coef)
                 print('The last avg acc of all repeats:', avg_final_acc[damping][reg_coef])
                 print('mean:', avg_final_acc[damping][reg_coef].mean(), 'std:', avg_final_acc[damping][reg_coef].std())
-    for damping in damping_list:
-      for reg_coef in reg_coef_list:
-          print('damping:', damping, 'reg_coef:', reg_coef,'mean:', avg_final_acc[damping][reg_coef].mean(), 'std:', avg_final_acc[damping][reg_coef].std())
+    #for damping in damping_list:
+        #for reg_coef in reg_coef_list:
+            #print(damping)
+            #print(reg_coef)
+            #print(avg_final_acc)
+            #print('damping:', damping, 'reg_coef:', reg_coef,'mean:', avg_final_acc[damping][reg_coef].mean(), 'std:', avg_final_acc[damping][reg_coef].std())
           
     end = time.time()
     print('Total time', end - start)

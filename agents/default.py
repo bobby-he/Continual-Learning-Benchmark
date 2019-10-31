@@ -154,7 +154,7 @@ class NormalNN(nn.Module):
         if self.reset_optimizer:  # Reset optimizer before learning each task
             self.log('Optimizer is reset!')
             self.init_optimizer()
-
+        print(len(train_loader.dataset))
         for epoch in range(self.config['schedule'][-1]):
             data_timer = Timer()
             batch_timer = Timer()

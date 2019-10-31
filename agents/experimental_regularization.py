@@ -115,7 +115,8 @@ class L2(NormalNN):
     def learn_batch(self, train_loader, val_loader=None):
 
         self.log('#reg_term:', len(self.regularization_terms))
-
+        self.first_update = True
+        print('first update')
         # 1.Learn the parameters for current task
         super(L2, self).learn_batch(train_loader, val_loader)
 
@@ -137,8 +138,7 @@ class L2(NormalNN):
             self.regularization_terms[self.task_count] = {'importance':importance, 'task_param':task_param}
 
     def criterion(self, inputs, targets, tasks, regularization=True, **kwargs):
-        loss = super(L2, self).criterion(inputs, targets, tasks, **kwargs)
-
+        loss = super(L2, self).criterion(inputs, targets, tasks, **kwargs)   
         if regularization and len(self.regularization_terms)>0:
             # Calculate the reg_loss only when the regularization_terms exists
             reg_loss = 0
