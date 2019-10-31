@@ -326,12 +326,12 @@ class JlNet(nn.Module):
     self.last = JlLinear(hidden_dim, out_dim, layer_idx = 2, use_cuda = self.use_cuda)    
     
   def new_proj(self):
-    indices = np.random.choice(1000, self.proj_dim, replace=False)
+    indices = np.random.choice(10000, self.proj_dim, replace=False)
     self.A_proj, self.B_proj = [self.A_proj_superset[i][indices,:] for i in range(self.n)], [self.B_proj_superset[i][indices, :] for i in range(self.n)]
     self.initialize[0] = True
     
   def sample_new_proj(self):
-    self.A_proj_superset, self.B_proj_superset = jl_kfac_gaussian_proj_mats(self.fs, q = 1000, use_cuda = self.use_cuda)
+    self.A_proj_superset, self.B_proj_superset = jl_kfac_gaussian_proj_mats(self.fs, q = 10000, use_cuda = self.use_cuda)
   def reset_damping(self):
     self.damping = self.initial_damping
     print(self.damping)
