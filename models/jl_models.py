@@ -222,7 +222,7 @@ class JlNet(nn.Module):
           A_temp = self.A_proj[i] * self.pre_proj[0]
           grad_subtract = (A_temp.t() @ self.B_proj[i]) * self.proj_dim #* norm_ratio
           
-          update = grads_pre_fisher# grads_pre_fisher_test - grad_subtract 
+          update = grads_pre_fisher_test - grad_subtract 
           
           if self.projection_gradient_capture:
               if self.initialize_task_gradients[self.task_id][i]:
@@ -238,7 +238,7 @@ class JlNet(nn.Module):
             #print(i, (grads_pre_fisher_test_norm/grads_pre_fisher_norm).item())
             #print((update_norm / grads_pre_fisher_norm).item())
             #print(i, (torch.sum(update * grads_pre_fisher)/torch.sqrt(update_norm)/torch.sqrt(grads_pre_fisher_norm)).item())
-          grad_matrix2 = Variable(update) #/ self.damping
+          grad_matrix2 = Variable(update) / self.damping
 
           #print(torch.sum(grad_subtract **2), torch.sum(grads_pre_fisher **2), torch.sum(grad_matrix2 **2))
           self.precon_update_list[i] = torch.clone(grad_matrix2).detach()
