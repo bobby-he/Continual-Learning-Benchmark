@@ -222,7 +222,7 @@ class JlNet(nn.Module):
           A_temp = self.A_proj[i] * self.pre_proj[0]
           grad_subtract = (A_temp.t() @ self.B_proj[i]) * self.proj_dim #* norm_ratio
           
-          update = grads_pre_fisher_test #- grad_subtract 
+          update = grads_pre_fisher_test - grad_subtract 
           
           if self.projection_gradient_capture:
               if self.initialize_task_gradients[self.task_id][i]:
