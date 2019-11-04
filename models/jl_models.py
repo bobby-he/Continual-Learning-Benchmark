@@ -91,6 +91,16 @@ class JlNet(nn.Module):
     self.grad_list = [None] * self.n 
     self.Bs = [None] * self.n
     self.As = [None] * self.n
+    
+    self.stored_kfac_As = [None] * 5
+    self.stored_kfac_Bs = [None] * 5
+    self.stored_task_gradients = [None] * 5
+    
+    for task_id in range(5):
+        self.stored_kfac_As[task_id] = [None] * self.n
+        self.stored_kfac_Bs[task_id] = [None] * self.n
+        self.stored_task_gradients[task_id] = [None] * self.n
+        
     self.acts_proj = [None] * self.n
     self.preact_grads_proj = [None] * self.n
     self.pre_reg_mat_decay = pre_reg_mat_decay
@@ -195,15 +205,21 @@ class JlNet(nn.Module):
           grads_pre_fisher = A.t() @ B # already normalised as B is divided by batch_size
           # only compute the grad coefficients once
 
-          if i == self.n-1:
-            approx_kmat_cho = regularized_cholesky_factor(self.AU_AU[0], lambda_ = self.damping/self.proj_dim)
+          if i == self.n-1: ###
+            
+            approx_kmat_cho = regularized_cholesky_factor(self.AU_AU[0], lambda_ = self.damping/self.proj_dim) ###
+            
             #approx_kmat_cho = regularized_cholesky_factor(self.pre_reg_mat[0], lambda_ = self.damping)
-            temp = torch.from_numpy(cho_solve((approx_kmat_cho.cpu().numpy(), True), self.grads_proj[0].view(-1, 1).cpu().numpy()))        
-            if self.use_cuda:
-              temp = temp.cuda()
-              
-            #grad_coeffs[0] = U_proj[0].t() @ temp # no ema method
-            self.pre_proj[0] = self.AU_AU[0] @ temp #  
+            
+            temp = torch.from_numpy(cho_solve((approx_kmat_cho.cpu().numpy(), True), self.grads_proj[0].view(-1, 1).cpu().numpy())) ###        
+            if self.use_cuda: ###
+              temp = temp.cuda() ###
+            
+            self.pre_proj[0] = temp            
+            
+            # self.pre_proj[0] = self.AU_AU[0] @ temp ###  
+            
+            
             #self.pre_proj[0] = self.pre_reg_mat[0] @ temp
           #temp = (Bs[i] / batch_size_sqrt) * grad_coeffs[0] # no ema method
           #grad_subtract = As[i].t() @ temp 
@@ -211,25 +227,25 @@ class JlNet(nn.Module):
           #preact_grads_temp = preact_grads_proj[i] * temp[0] # shape q x out, full kfac method
           #grad_subtract = acts_proj[i].t() @ preact_grads_temp 
           
-          test = self.A_proj[i] * self.grads_proj[0].view(-1, 1)
-          grads_pre_fisher_test = (test.t() @ self.B_proj[i]) * self.proj_dim
+          test = self.A_proj[i] * self.grads_proj[0].view(-1, 1) ###
+          grads_pre_fisher_test = (test.t() @ self.B_proj[i]) * self.proj_dim ###
           
           #grads_pre_fisher_norm = torch.sum(grads_pre_fisher ** 2)
-          grads_pre_fisher_test_norm = torch.sum(grads_pre_fisher_test ** 2)
+          #grads_pre_fisher_test_norm = torch.sum(grads_pre_fisher_test ** 2)
           
           #norm_ratio = torch.sqrt(grads_pre_fisher_norm/grads_pre_fisher_test_norm)
           
-          A_temp = self.A_proj[i] * self.pre_proj[0]
-          grad_subtract = (A_temp.t() @ self.B_proj[i]) * self.proj_dim #* norm_ratio
+          A_temp = self.A_proj[i] * self.pre_proj[0] ###
+          update = (A_temp.t() @ self.B_proj[i]) # * self.proj_dim  #* norm_ratio ###
           
-          update = grads_pre_fisher_test - grad_subtract 
+          update = grads_pre_fisher_test #- grad_subtract  ###
           
           if self.projection_gradient_capture:
               if self.initialize_task_gradients[self.task_id][i]:
-                  self.task_gradients[self.task_id][i] = grads_pre_fisher * batch_size
+                  self.stored_task_gradients[self.task_id][i] = grads_pre_fisher * batch_size
                   self.initialize_task_gradients[self.task_id][i] = False
               else:    
-                  self.task_gradients[self.task_id][i] += grads_pre_fisher * batch_size
+                  self.stored_task_gradients[self.task_id][i] += grads_pre_fisher * batch_size
           #if i == 0:
             #update_norm = torch.sum(update ** 2)
             #print(norm_ratio)
@@ -238,7 +254,9 @@ class JlNet(nn.Module):
             #print(i, (grads_pre_fisher_test_norm/grads_pre_fisher_norm).item())
             #print((update_norm / grads_pre_fisher_norm).item())
             #print(i, (torch.sum(update * grads_pre_fisher)/torch.sqrt(update_norm)/torch.sqrt(grads_pre_fisher_norm)).item())
-          grad_matrix2 = Variable(update) / self.damping
+            
+            
+          grad_matrix2 = Variable(update) #/ self.damping ###
 
           #print(torch.sum(grad_subtract **2), torch.sum(grads_pre_fisher **2), torch.sum(grad_matrix2 **2))
           self.precon_update_list[i] = torch.clone(grad_matrix2).detach()
@@ -326,12 +344,12 @@ class JlNet(nn.Module):
     self.last = JlLinear(hidden_dim, out_dim, layer_idx = 2, use_cuda = self.use_cuda)    
     
   def new_proj(self):
-    indices = np.random.choice(500, self.proj_dim, replace=False)
+    indices = np.random.choice(1000, self.proj_dim, replace=False)
     self.A_proj, self.B_proj = [self.A_proj_superset[i][indices,:] for i in range(self.n)], [self.B_proj_superset[i][indices, :] for i in range(self.n)]
     self.initialize[0] = True
     
   def sample_new_proj(self):
-    self.A_proj_superset, self.B_proj_superset = jl_kfac_gaussian_proj_mats(self.fs, q = 500, use_cuda = self.use_cuda)
+    self.A_proj_superset, self.B_proj_superset = jl_kfac_gaussian_proj_mats(self.fs, q = 1000, use_cuda = self.use_cuda)
   def reset_damping(self):
     self.damping = self.initial_damping
     print(self.damping)

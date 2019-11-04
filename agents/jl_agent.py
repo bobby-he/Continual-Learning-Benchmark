@@ -272,6 +272,58 @@ class JlNN(nn.Module):
         
         self.model.damping = max(self.model.damping, self.model.min_damp)
         
+    def update_projected_grads_and_naturals(self):
+        # capture the projected gradients and natural gradients
+        for prev_id in range(self.model.task_id):         
+          for i in range(self.model.n):       
+            acts_proj = self.model.A_proj[i] @ self.model.stored_kfac_As[prev_id][i]
+            preact_grads_proj = self.model.B_proj[i] @ self.model.stored_kfac_Bs[prev_id][i]
+            if i == 0:
+              grads_proj = torch.diag(self.model.A_proj[i] @ self.model.stored_task_gradients[prev_id][i] @ self.model.B_proj[i].t()).unsqueeze(1)
+              AU_AU = ((self.model.A_proj[i] @ acts_proj.t()) * (self.model.B_proj[i] @ preact_grads_proj.t())) 
+            else:
+              AU_AU += ((self.model.A_proj[i] @ acts_proj.t()) * (self.model.B_proj[i] @ preact_grads_proj.t()))    
+              grads_proj += torch.diag(self.model.A_proj[i] @ self.model.stored_task_gradients[prev_id][i] @ self.model.B_proj[i].t()).unsqueeze(1)
+          
+          approx_kmat_cho = regularized_cholesky_factor(AU_AU, lambda_ = self.model.damping/self.model.proj_dim)
+          temp = torch.from_numpy(cho_solve((approx_kmat_cho.cpu().numpy(), True), grads_proj.cpu().numpy()))
+          if self.gpu:
+            temp = temp.cuda()
+            
+          for i in range(self.model.n):
+            A_temp_natural = self.model.A_proj[i] * temp
+            self.model.task_natural_gradients[prev_id][i] = A_temp_natural.t() @ self.model.B_proj[i]
+            
+            A_temp_grad = self.model.A_proj[i] * grads_proj
+            self.model.task_gradients[prev_id][i] = A_temp_grad.t() @ self.model.B_proj[i] 
+            
+        # gram schmidt now 
+        for task_id in range(self.model.task_id):
+          for prev_id in range(task_id):
+              
+              # calculate the inner product
+              
+              inner_prod_grad_grad = ip(self.model.task_gradients[task_id], self.model.task_gradients[prev_id])
+              inner_prod_grad_precon = ip(self.model.task_gradients[task_id], self.model.task_natural_gradients[prev_id])
+              inner_prod_precon_grad = ip(self.model.task_natural_gradients[task_id], self.model.task_gradients[prev_id])
+              inner_prod_precon_precon = ip(self.model.task_natural_gradients[task_id], self.model.task_natural_gradients[prev_id])
+              # project onto orthogonal 
+              for i in range(self.model.n):
+                  self.model.task_gradients[task_id][i] -= (inner_prod_grad_grad / self.model.task_grad_ips[prev_id]) * self.model.task_gradients[prev_id][i]  
+                  self.model.task_gradients[task_id][i] -= (inner_prod_grad_precon / self.model.task_natural_grad_ips[prev_id]) * self.model.task_natural_gradients[prev_id][i]
+                  
+                  self.model.task_natural_gradients[task_id][i] -= (inner_prod_precon_grad / self.model.task_grad_ips[prev_id]) * self.model.task_gradients[prev_id][i]
+                  self.model.task_natural_gradients[task_id][i] -= (inner_prod_precon_precon / self.model.task_natural_grad_ips[prev_id]) * self.model.task_natural_gradients[prev_id][i]
+                  
+          self.model.task_grad_ips[task_id] = ip(self.model.task_gradients[task_id], self.model.task_gradients[task_id])
+          cur_task_grad_precon_ip = ip(self.model.task_gradients[task_id], self.model.task_natural_gradients[task_id])
+          #print(cur_task_grad_precon_ip)
+          for i in range(self.model.n):
+              self.model.task_natural_gradients[task_id][i] -= (cur_task_grad_precon_ip / self.model.task_grad_ips[task_id]) * self.model.task_gradients[task_id][i]    
+            
+          self.model.task_natural_grad_ips[task_id] = ip(self.model.task_natural_gradients[task_id], self.model.task_natural_gradients[task_id])
+          #print(ip(self.model.task_natural_gradients[task_id], self.model.task_gradients[task_id]))
+          
     def learn_batch(self, train_loader, val_loader=None):
         if self.reset_optimizer:  # Reset optimizer before learning each task
             self.log('Optimizer is reset!')
@@ -280,7 +332,9 @@ class JlNN(nn.Module):
         self.model.reset_kfac_ema()
         self.first_update = True
         self.model.sample_new_proj()
-        
+        self.model.new_proj()
+        self.update_projected_grads_and_naturals()
+
         for epoch in range(self.config['schedule'][-1]):
             data_timer = Timer()
             batch_timer = Timer()
@@ -345,45 +399,14 @@ class JlNN(nn.Module):
             if val_loader != None:
                 self.validation(val_loader)
             
-            # Gram-Schmidt
+            # store gradients and kfacs
             if epoch == self.config['schedule'][-1] - 1:
               
               for i in range(self.model.n):
-                self.model.task_gradients[self.model.task_id][i] /= len(train_loader.dataset)
+                self.model.stored_task_gradients[self.model.task_id][i] /= len(train_loader.dataset)
                 
-                As_cho = regularized_cholesky_factor(self.model.As[i]/batch_size, lambda_ = 0.0001)
-                Bs_cho = regularized_cholesky_factor(self.model.Bs[i]*batch_size, lambda_ = 0.0001)
-                kfac_A = cho_solve((As_cho.cpu().numpy(), True), self.model.task_gradients[self.model.task_id][i].cpu().numpy())
-                
-                self.model.task_natural_gradients[self.model.task_id][i] = (torch.from_numpy(cho_solve((Bs_cho.cpu().numpy(), True), np.transpose(kfac_A)))).t()
-                
-                if self.gpu:
-                    self.model.task_natural_gradients[self.model.task_id][i] = self.model.task_natural_gradients[self.model.task_id][i].cuda()
-              print(ip(self.model.task_natural_gradients[self.model.task_id], self.model.task_gradients[self.model.task_id]))
-              for prev_id in range(self.model.task_id):
-                  
-                  # calculate the inner product
-                  
-                  inner_prod_grad_grad = ip(self.model.task_gradients[self.model.task_id], self.model.task_gradients[prev_id])
-                  inner_prod_grad_precon = ip(self.model.task_gradients[self.model.task_id], self.model.task_natural_gradients[prev_id])
-                  inner_prod_precon_grad = ip(self.model.task_natural_gradients[self.model.task_id], self.model.task_gradients[prev_id])
-                  inner_prod_precon_precon = ip(self.model.task_natural_gradients[self.model.task_id], self.model.task_natural_gradients[prev_id])
-                  # project onto orthogonal 
-                  for i in range(self.model.n):
-                      self.model.task_gradients[self.model.task_id][i] -= (inner_prod_grad_grad / self.model.task_grad_ips[prev_id]) * self.model.task_gradients[prev_id][i]  
-                      self.model.task_gradients[self.model.task_id][i] -= (inner_prod_grad_precon / self.model.task_natural_grad_ips[prev_id]) * self.model.task_natural_gradients[prev_id][i]
-                      
-                      self.model.task_natural_gradients[self.model.task_id][i] -= (inner_prod_precon_grad / self.model.task_grad_ips[prev_id]) * self.model.task_gradients[prev_id][i]
-                      self.model.task_natural_gradients[self.model.task_id][i] -= (inner_prod_precon_precon / self.model.task_natural_grad_ips[prev_id]) * self.model.task_natural_gradients[prev_id][i]
-                      
-              self.model.task_grad_ips[self.model.task_id] = ip(self.model.task_gradients[self.model.task_id], self.model.task_gradients[self.model.task_id])
-              cur_task_grad_precon_ip = ip(self.model.task_gradients[self.model.task_id], self.model.task_natural_gradients[self.model.task_id])
-              #print(cur_task_grad_precon_ip)
-              for i in range(self.model.n):
-                  self.model.task_natural_gradients[self.model.task_id][i] -= (cur_task_grad_precon_ip / self.model.task_grad_ips[self.model.task_id]) * self.model.task_gradients[self.model.task_id][i]    
-                
-              self.model.task_natural_grad_ips[self.model.task_id] = ip(self.model.task_natural_gradients[self.model.task_id], self.model.task_natural_gradients[self.model.task_id])
-              print(ip(self.model.task_natural_gradients[self.model.task_id], self.model.task_gradients[self.model.task_id]))
+                self.model.stored_kfac_As[self.model.task_id][i] = self.model.As[i] / batch_size
+                self.model.stored_kfac_Bs[self.model.task_id][i] = self.model.Bs[i] * batch_size
                       
               self.model.task_id += 1
               print('task id', self.model.task_id)
