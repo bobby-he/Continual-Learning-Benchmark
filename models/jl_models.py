@@ -122,6 +122,7 @@ class JlNet(nn.Module):
     self.task_natural_grad_ips = [0] * 5
     self.task_id = 0
 ##############################################################
+
     class JlngAddmm(Function):
       @staticmethod
       def _get_output(ctx, arg, inplace=False):
@@ -258,7 +259,6 @@ class JlNet(nn.Module):
             
           grad_matrix2 = Variable(update) #/ self.damping ###
 
-          #print(torch.sum(grad_subtract **2), torch.sum(grads_pre_fisher **2), torch.sum(grad_matrix2 **2))
           self.precon_update_list[i] = torch.clone(grad_matrix2).detach()
           self.grad_list[i] = torch.clone(grads_pre_fisher).detach()
           ctx.mode = 'standard'

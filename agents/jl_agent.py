@@ -181,8 +181,8 @@ class JlNN(nn.Module):
                 for i, p in enumerate(group['params']):
                     if p.grad is None:
                         continue
-                    p.grad.data -= (inner_prod_grad / self.model.task_grad_ips[prev_task]) * self.model.task_gradients[prev_task][i] #\
-                                 #+ (inner_prod_natural/self.model.task_natural_grad_ips[prev_task]) * self.model.task_natural_gradients[prev_task][i]
+                    p.grad.data -= (inner_prod_grad / self.model.task_grad_ips[prev_task]) * self.model.task_gradients[prev_task][i] \
+                                 + (inner_prod_natural/self.model.task_natural_grad_ips[prev_task]) * self.model.task_natural_gradients[prev_task][i]
                     
                     #count += torch.sum(p.grad.data * self.model.task_gradients[prev_task][i])
             #print('count is', count/torch.sqrt(self.model.task_grad_ips[prev_task] * self_inner_prod))
