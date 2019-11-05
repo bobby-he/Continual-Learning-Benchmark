@@ -74,7 +74,7 @@ def jl_kfac_gaussian_proj_mats(fs, q = 2000, use_cuda = True):
 
 
 class JlNet(nn.Module):
-  def __init__(self, out_dim = 10, in_channel = 1, img_sz = 32, hidden_dim = 256, use_cuda = True, pre_reg_mat_decay = 0.9, initial_damping = 0.05, min_damp = 0.05, proj_dim = 1000, damping_update_period = 5):
+  def __init__(self, out_dim = 10, in_channel = 1, img_sz = 32, hidden_dim = 256, use_cuda = True, pre_reg_mat_decay = 0.9, initial_damping = 0.05, min_damp = 0.05, proj_dim = 2000, damping_update_period = 5):
     super(JlNet, self).__init__()
     self.in_dim = in_channel * img_sz * img_sz
     self.fs = [self.in_dim, hidden_dim, hidden_dim, out_dim]
@@ -323,12 +323,12 @@ class JlNet(nn.Module):
     self.last = JlLinear(hidden_dim, out_dim, layer_idx = 2, use_cuda = self.use_cuda)    
     
   def new_proj(self):
-    indices = np.random.choice(1000, self.proj_dim, replace=False)
+    indices = np.random.choice(2000, self.proj_dim, replace=False)
     self.A_proj, self.B_proj = [self.A_proj_superset[i][indices,:] for i in range(self.n)], [self.B_proj_superset[i][indices, :] for i in range(self.n)]
     self.initialize[0] = True
     
   def sample_new_proj(self):
-    self.A_proj_superset, self.B_proj_superset = jl_kfac_gaussian_proj_mats(self.fs, q = 1000, use_cuda = self.use_cuda)
+    self.A_proj_superset, self.B_proj_superset = jl_kfac_gaussian_proj_mats(self.fs, q = 2000, use_cuda = self.use_cuda)
     
   def reset_damping(self):
     self.damping = self.initial_damping
