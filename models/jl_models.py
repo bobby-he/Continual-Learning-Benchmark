@@ -74,7 +74,7 @@ def jl_kfac_gaussian_proj_mats(fs, q = 2000, use_cuda = True):
 
 
 class JlNet(nn.Module):
-  def __init__(self, out_dim = 10, in_channel = 1, img_sz = 32, hidden_dim = 256, use_cuda = True, pre_reg_mat_decay = 0.9, initial_damping = 0.05, min_damp = 0.05, proj_dim = 500, damping_update_period = 5):
+  def __init__(self, out_dim = 10, in_channel = 1, img_sz = 32, hidden_dim = 256, use_cuda = True, pre_reg_mat_decay = 0.9, initial_damping = 0.05, min_damp = 0.05, proj_dim = 1000, damping_update_period = 5):
     super(JlNet, self).__init__()
     self.in_dim = in_channel * img_sz * img_sz
     self.fs = [self.in_dim, hidden_dim, hidden_dim, out_dim]
@@ -121,6 +121,12 @@ class JlNet(nn.Module):
     self.task_grad_ips = [0] * 5
     self.task_natural_grad_ips = [0] * 5
     self.task_id = 0
+    
+    self.projection_method = 'kfac_ema_over_all_projections'
+    self.undo_projection_method = 'optimize_in_projection_space'
+    #self.undo_projection_method = 'projected_optimization_in_whole_space'
+    
+    self.backward_mode = 'U_proj_capture'
 ##############################################################
 
     class JlngAddmm(Function):
@@ -136,7 +142,6 @@ class JlNet(nn.Module):
       def forward(ctx, add_matrix, matrix1, matrix2, beta=1, alpha=1, inplace=False, i=0):
         ctx.save_for_backward(matrix1, matrix2)
         ctx.idx = i
-        ctx.mode = 'U_proj_capture'
         output = JlngAddmm._get_output(ctx, add_matrix, inplace=inplace)
         return torch.addmm(beta, add_matrix, alpha,
                            matrix1, matrix2, out=output)
@@ -153,117 +158,91 @@ class JlNet(nn.Module):
         batch_size_sqrt = np.sqrt(batch_size)
         # A has shape batch_size x w_in 
         # B has shape batch_size x w_out
-        if ctx.mode == 'U_proj_capture':
-          #if i == self.n - 1:
-            #self.U_proj[0] = ((self.A_proj[i] @ A.t()) * (self.B_proj[i] @ (B.t() * batch_size)))/ batch_size_sqrt
-				    
-          #else:
-            #self.U_proj[0]  += ((self.A_proj[i] @ A.t()) * (self.B_proj[i] @ (B.t() * batch_size))) / batch_size_sqrt
-
-          # update the pre_reg_mat at i==0 i.e. when U_proj complete
-          #if i == 0:
-            
-            #if self.initialize[0]:
-              #print('acidic')
-              #self.pre_reg_mat[0] = self.U_proj[0] @ self.U_proj[0].t()
-              #self.initialize[0] = False
-            #else:
-              #self.pre_reg_mat[0] = self.pre_reg_mat_decay * self.pre_reg_mat[0] + (1 - self.pre_reg_mat_decay) * (self.U_proj[0] @ self.U_proj[0].t()) # shape q x q
+        if self.backward_mode == 'U_proj_capture':
         
-          if self.initialize_list[i]:
-            #print(i)
-            #print('hello')
-            self.Bs[i] = B.t() @ B     # store pre-activation derivatives and activations for later
+          if self.projection_method == 'ema_over_single_projection':            
+            if i == self.n - 1:
+              self.U_proj[0] = ((self.A_proj[i] @ A.t()) * (self.B_proj[i] @ (B.t() * batch_size))) / batch_size_sqrt
+				      
+            else:
+              self.U_proj[0] += ((self.A_proj[i] @ A.t()) * (self.B_proj[i] @ (B.t() * batch_size))) / batch_size_sqrt
 
-            self.As[i] = A.t() @ A
-            self.initialize_list[i] = False
-          else:    
-            #print('lol')
-            self.Bs[i] = self.pre_reg_mat_decay * self.Bs[i] + (1 - self.pre_reg_mat_decay) * B.t() @ B
-            self.As[i] = self.pre_reg_mat_decay * self.As[i] + (1 - self.pre_reg_mat_decay) * A.t() @ A	
-          ctx.mode = 'grads_proj_capture'
+            # update the pre_reg_mat at i==0 i.e. when U_proj complete
+            if i == 0:
+              
+              if self.initialize[0]:
+                print('acidic')
+                self.pre_reg_mat[0] = self.U_proj[0] @ self.U_proj[0].t()
+                self.initialize[0] = False
+              else:
+                self.pre_reg_mat[0] = self.pre_reg_mat_decay * self.pre_reg_mat[0] + (1 - self.pre_reg_mat_decay) * (self.U_proj[0] @ self.U_proj[0].t()) # shape q x q
+                
+          if self.projection_method == 'kfac_ema_over_all_projections':
+            if self.initialize_list[i]:
+              self.Bs[i] = B.t() @ B     # store pre-activation derivatives and activations for later
+              self.As[i] = A.t() @ A
+              self.initialize_list[i] = False
+            else:    
+              self.Bs[i] = self.pre_reg_mat_decay * self.Bs[i] + (1 - self.pre_reg_mat_decay) * B.t() @ B
+              self.As[i] = self.pre_reg_mat_decay * self.As[i] + (1 - self.pre_reg_mat_decay) * A.t() @ A	
             
-        elif ctx.mode == 'grads_proj_capture':
+        elif self.backward_mode == 'grads_proj_capture':
           
           if i == self.n - 1:
             self.grads_proj[0] = torch.mean((self.A_proj[i] @ A.t()) * (self.B_proj[i] @ (B.t() * batch_size)), dim = 1)
-            #alt = A.t() @ B
-            #alt = A_proj[i] @ alt @ B_proj[i].t()
-            #print(i, torch.sum((torch.diag(alt) - grads_proj[0])**2))
           else:
             self.grads_proj[0] += torch.mean((self.A_proj[i] @ A.t()) * (self.B_proj[i] @ (B.t() * batch_size)), dim = 1)
-            
-          self.acts_proj[i] = (self.A_proj[i] @ (self.As[i]/ batch_size)) # shape q x w_in
-          self.preact_grads_proj[i] = (self.B_proj[i] @ (self.Bs[i] * batch_size)) # shape q x w_out
           
-          if i == self.n-1:
-            self.AU_AU[0] = ((self.A_proj[i] @ self.acts_proj[i].t()) * (self.B_proj[i] @ self.preact_grads_proj[i].t()))
-          else:
-            self.AU_AU[0] += ((self.A_proj[i] @ self.acts_proj[i].t()) * (self.B_proj[i] @ self.preact_grads_proj[i].t()))
-          ctx.mode = 'jlng'
+          if self.projection_method == 'kfac_ema_over_all_projections':  
+            self.acts_proj[i] = (self.A_proj[i] @ (self.As[i]/ batch_size)) # shape q x w_in
+            self.preact_grads_proj[i] = (self.B_proj[i] @ (self.Bs[i] * batch_size)) # shape q x w_out
           
-        elif ctx.mode == 'jlng':
+            if i == self.n-1:
+              self.pre_reg_mat[0] = ((self.A_proj[i] @ self.acts_proj[i].t()) * (self.B_proj[i] @ self.preact_grads_proj[i].t()))
+            else:
+              self.pre_reg_mat[0] += ((self.A_proj[i] @ self.acts_proj[i].t()) * (self.B_proj[i] @ self.preact_grads_proj[i].t()))
+          
+        elif self.backward_mode == 'jlng':
+        
           grads_pre_fisher = A.t() @ B # already normalised as B is divided by batch_size
-          # only compute the grad coefficients once
+          
+          if i == self.n-1: 
+            approx_kmat_cho = regularized_cholesky_factor(self.pre_reg_mat[0], lambda_ = self.damping)
+            temp = torch.from_numpy(cho_solve((approx_kmat_cho.cpu().numpy(), True), self.grads_proj[0].view(-1, 1).cpu().numpy()))         
+            if self.use_cuda: 
+              temp = temp.cuda() 
+            
+            if self.undo_projection_method == 'optimize_in_projection_space':
+              self.pre_proj[0] = temp            
+            elif self.undo_projection_method == 'projected_optimization_in_whole_space':
+              self.pre_proj[0] = self.pre_reg_mat[0] @ temp   
 
-          if i == self.n-1: ###
-            
-            approx_kmat_cho = regularized_cholesky_factor(self.AU_AU[0], lambda_ = self.damping/self.proj_dim) ###
-            
-            #approx_kmat_cho = regularized_cholesky_factor(self.pre_reg_mat[0], lambda_ = self.damping)
-            
-            temp = torch.from_numpy(cho_solve((approx_kmat_cho.cpu().numpy(), True), self.grads_proj[0].view(-1, 1).cpu().numpy())) ###        
-            if self.use_cuda: ###
-              temp = temp.cuda() ###
-            
-            self.pre_proj[0] = temp            
-            
-            # self.pre_proj[0] = self.AU_AU[0] @ temp ###  
-            
-            
-            #self.pre_proj[0] = self.pre_reg_mat[0] @ temp
-          #temp = (Bs[i] / batch_size_sqrt) * grad_coeffs[0] # no ema method
-          #grad_subtract = As[i].t() @ temp 
-
-          #preact_grads_temp = preact_grads_proj[i] * temp[0] # shape q x out, full kfac method
-          #grad_subtract = acts_proj[i].t() @ preact_grads_temp 
-          
-          test = self.A_proj[i] * self.grads_proj[0].view(-1, 1) ###
-          grads_pre_fisher_test = (test.t() @ self.B_proj[i]) * self.proj_dim ###
-          
-          #grads_pre_fisher_norm = torch.sum(grads_pre_fisher ** 2)
-          #grads_pre_fisher_test_norm = torch.sum(grads_pre_fisher_test ** 2)
-          
-          #norm_ratio = torch.sqrt(grads_pre_fisher_norm/grads_pre_fisher_test_norm)
+          test = self.A_proj[i] * self.grads_proj[0].view(-1, 1) 
+          grads_pre_fisher_test = (test.t() @ self.B_proj[i]) * self.proj_dim
           
           A_temp = self.A_proj[i] * self.pre_proj[0] ###
-          update = (A_temp.t() @ self.B_proj[i]) # * self.proj_dim  #* norm_ratio ###
           
-          update = grads_pre_fisher_test #- grad_subtract  ###
+          if self.undo_projection_method == 'optimize_in_projection_space':
+            update = (A_temp.t() @ self.B_proj[i]) # A^T(AU (AU)^T + \lambda I)^{-1} A \delta     
+            grad_matrix2 = Variable(update)                             
+          elif self.undo_projection_method == 'projected_optimization_in_whole_space':
+            grad_subtract = (A_temp.t() @ self.B_proj[i]) * self.proj_dim # A^T (AU)(AU)^T [(AU)(AU)^T + \lambda I]^{-1} A \delta
+            update = grads_pre_fisher_test - grad_subtract  ###
+            grad_matrix2 = Variable(update) / self.damping
           
-          if self.projection_gradient_capture:
-              if self.initialize_task_gradients[self.task_id][i]:
-                  self.stored_task_gradients[self.task_id][i] = grads_pre_fisher * batch_size
-                  self.initialize_task_gradients[self.task_id][i] = False
-              else:    
-                  self.stored_task_gradients[self.task_id][i] += grads_pre_fisher * batch_size
-          #if i == 0:
-            #update_norm = torch.sum(update ** 2)
-            #print(norm_ratio)
-
-            #print(i, (torch.sum(grad_subtract**2)/grads_pre_fisher_test_norm).item())
-            #print(i, (grads_pre_fisher_test_norm/grads_pre_fisher_norm).item())
-            #print((update_norm / grads_pre_fisher_norm).item())
-            #print(i, (torch.sum(update * grads_pre_fisher)/torch.sqrt(update_norm)/torch.sqrt(grads_pre_fisher_norm)).item())
-            
-            
-          grad_matrix2 = Variable(update) #/ self.damping ###
-
-          self.precon_update_list[i] = torch.clone(grad_matrix2).detach()
           self.grad_list[i] = torch.clone(grads_pre_fisher).detach()
-          ctx.mode = 'standard'
-
-        elif ctx.mode == 'standard':
+          self.precon_update_list[i] = torch.clone(grad_matrix2).detach()  
+          
+        elif self.backward_mode == 'grads_capture':
+            grads_pre_fisher = A.t() @ B
+            grad_matrix2 = Variable(grads_pre_fisher)
+            if self.initialize_task_gradients[self.task_id][i]:
+                self.stored_task_gradients[self.task_id][i] = grads_pre_fisher * batch_size
+                self.initialize_task_gradients[self.task_id][i] = False
+            else:
+                self.stored_task_gradients[self.task_id][i] += grads_pre_fisher * batch_size
+                
+        elif self.backward_mode == 'standard':
           grad_matrix2 = torch.mm(matrix1.t(), grad_output)
 
         else:
@@ -333,7 +312,7 @@ class JlNet(nn.Module):
             return 'in_features={}, out_features={}, bias={}'.format(
                 self.in_features, self.out_features, self.bias is not None
             )
-############################################################################
+
     self.JlLinear = JlLinear
     self.linear = nn.Sequential(
           JlLinear(self.in_dim, hidden_dim, layer_idx = 0, use_cuda = self.use_cuda), 
@@ -350,6 +329,7 @@ class JlNet(nn.Module):
     
   def sample_new_proj(self):
     self.A_proj_superset, self.B_proj_superset = jl_kfac_gaussian_proj_mats(self.fs, q = 1000, use_cuda = self.use_cuda)
+    
   def reset_damping(self):
     self.damping = self.initial_damping
     print(self.damping)

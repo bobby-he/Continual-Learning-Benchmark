@@ -143,7 +143,13 @@ class JlNN(nn.Module):
                 pred = preds['All'][:,:self.valid_out_dim]
             loss = self.criterion_fn(pred, targets)
         return loss
-
+    def gradient_capture(self, inputs, targets, tasks):
+        output_logits = self.forward(inputs)
+        self.optimizer.zero_grad()
+        true_loss = self.criterion(output_logits, targets, tasks)
+        self.model.backward_mode = 'grads_capture'
+        true_loss.backward()
+        
     def update_model(self, inputs, targets, tasks):
         batch_size = len(targets)
         #print('batch_size {}'.format(batch_size))
@@ -158,17 +164,20 @@ class JlNN(nn.Module):
         model_dist = torch.distributions.multinomial.Categorical(logits = output_logits['All'].data)
         model_samples = model_dist.sample()
         sampled_loss = self.criterion(output_logits, model_samples, tasks)
+        self.model.backward_mode = 'U_proj_capture'
         sampled_loss.backward(retain_graph = True)
         
         # capturing grad_proj
         self.optimizer.zero_grad()
         true_loss = self.criterion(output_logits, targets, tasks)
+        self.model.backward_mode = 'grads_proj_capture'
         true_loss.backward(retain_graph = True)
         
         # actually compute updates
         self.optimizer.zero_grad()
+        self.model.backward_mode = 'jlng'
         true_loss.backward(retain_graph = True)
-        
+
         # Do the orthogonal projection
         for prev_task in range(self.model.task_id):
             #print('ok')
@@ -176,22 +185,21 @@ class JlNN(nn.Module):
             inner_prod_natural = ip(self.model.task_natural_gradients[prev_task], self.model.precon_update_list)
             #self_inner_prod = ip(self.model.precon_update_list, self.model.precon_update_list)
             #count = 0
+            #print(self.model.task_natural_grad_ips[prev_task], self.model.task_grad_ips[prev_task])
             for group in self.optimizer.param_groups:
             
                 for i, p in enumerate(group['params']):
                     if p.grad is None:
                         continue
-                    p.grad.data -= (inner_prod_grad / self.model.task_grad_ips[prev_task]) * self.model.task_gradients[prev_task][i] \
-                                 + (inner_prod_natural/self.model.task_natural_grad_ips[prev_task]) * self.model.task_natural_gradients[prev_task][i]
+                    #p.grad.data -= (inner_prod_grad / self.model.task_grad_ips[prev_task]) * self.model.task_gradients[prev_task][i] \
+                    #p.grad.data -= (inner_prod_natural/self.model.task_natural_grad_ips[prev_task]) * self.model.task_natural_gradients[prev_task][i]
                     
-                    #count += torch.sum(p.grad.data * self.model.task_gradients[prev_task][i])
-            #print('count is', count/torch.sqrt(self.model.task_grad_ips[prev_task] * self_inner_prod))
         for group in self.optimizer.param_groups:
             for i, p in enumerate(group['params']):
             
                 self.model.precon_update_list[i] = -1 * torch.clone(p.grad.data).detach()
                      
-        
+        self.model.backward_mode = 'standard'   
         # compute learning rate and momentum parameter
         dummy = torch.zeros_like(output_logits['All'])
         dummy.requires_grad = True
@@ -213,7 +221,7 @@ class JlNN(nn.Module):
         if self.first_update:
           print('yo')
           alpha = -1 * c_1 / (b_11 + m_11)
-          print(alpha)
+          #print(alpha)
           self.optimizer.momentum = 0
           assert (alpha>=0), 'Looks like you have a negative learning rate noob!'
           self.optimizer.lr = alpha
@@ -274,7 +282,7 @@ class JlNN(nn.Module):
         
     def update_projected_grads_and_naturals(self):
         # capture the projected gradients and natural gradients
-        for prev_id in range(self.model.task_id):         
+        for prev_id in range(self.model.task_id):    
           for i in range(self.model.n):       
             acts_proj = self.model.A_proj[i] @ self.model.stored_kfac_As[prev_id][i]
             preact_grads_proj = self.model.B_proj[i] @ self.model.stored_kfac_Bs[prev_id][i]
@@ -289,14 +297,16 @@ class JlNN(nn.Module):
           temp = torch.from_numpy(cho_solve((approx_kmat_cho.cpu().numpy(), True), grads_proj.cpu().numpy()))
           if self.gpu:
             temp = temp.cuda()
+          
+          temp = AU_AU @ temp  * self.model.proj_dim
             
-          for i in range(self.model.n):
-            A_temp_natural = self.model.A_proj[i] * temp
-            self.model.task_natural_gradients[prev_id][i] = A_temp_natural.t() @ self.model.B_proj[i]
-            
+          for i in range(self.model.n):       
             A_temp_grad = self.model.A_proj[i] * grads_proj
-            self.model.task_gradients[prev_id][i] = A_temp_grad.t() @ self.model.B_proj[i] 
+            self.model.task_gradients[prev_id][i] = A_temp_grad.t() @ self.model.B_proj[i] * self.model.proj_dim
             
+            A_temp_natural = self.model.A_proj[i] * temp
+            #self.model.task_natural_gradients[prev_id][i] = A_temp_natural.t() @ self.model.B_proj[i]
+            self.model.task_natural_gradients[prev_id][i] = self.model.task_gradients[prev_id][i] - A_temp_natural.t() @ self.model.B_proj[i]
         # gram schmidt now 
         for task_id in range(self.model.task_id):
           for prev_id in range(task_id):
@@ -318,11 +328,13 @@ class JlNN(nn.Module):
           self.model.task_grad_ips[task_id] = ip(self.model.task_gradients[task_id], self.model.task_gradients[task_id])
           cur_task_grad_precon_ip = ip(self.model.task_gradients[task_id], self.model.task_natural_gradients[task_id])
           #print(cur_task_grad_precon_ip)
+          #print(ip(self.model.task_natural_gradients[task_id], self.model.task_natural_gradients[task_id]))
           for i in range(self.model.n):
               self.model.task_natural_gradients[task_id][i] -= (cur_task_grad_precon_ip / self.model.task_grad_ips[task_id]) * self.model.task_gradients[task_id][i]    
             
           self.model.task_natural_grad_ips[task_id] = ip(self.model.task_natural_gradients[task_id], self.model.task_natural_gradients[task_id])
           #print(ip(self.model.task_natural_gradients[task_id], self.model.task_gradients[task_id]))
+          #print(self.model.task_natural_grad_ips[task_id])
           
     def learn_batch(self, train_loader, val_loader=None):
         if self.reset_optimizer:  # Reset optimizer before learning each task
@@ -334,7 +346,7 @@ class JlNN(nn.Module):
         self.model.sample_new_proj()
         self.model.new_proj()
         self.update_projected_grads_and_naturals()
-
+        
         for epoch in range(self.config['schedule'][-1]):
             data_timer = Timer()
             batch_timer = Timer()
@@ -346,24 +358,19 @@ class JlNN(nn.Module):
             # Config the model and optimizer
             self.log('Epoch:{0}'.format(epoch))
             self.model.train()
-            #self.scheduler.step(epoch)
             for param_group in self.optimizer.param_groups:
                 self.log('LR:',param_group['lr'])
 
             # Learning with mini-batch
             data_timer.tic()
             batch_timer.tic()
-            
-            if epoch == self.config['schedule'][-1] - 1:
-                self.model.projection_gradient_capture = True
-                
+
             print('new projection')
             self.log('Itr\t\tTime\t\t  Data\t\t  Loss\t\tAcc')
-            for i, (input, target, task) in enumerate(train_loader):
-                
+            for i, (input, target, task) in enumerate(train_loader):                     
                 if i != len(train_loader) - 1:        
+                    batch_size = len(target)   
                     self.model.new_proj()
-                    batch_size = len(target)
                     data_time.update(data_timer.toc())  # measure data loading time
 
                     if self.gpu:
@@ -398,19 +405,21 @@ class JlNN(nn.Module):
             # Evaluate the performance of current task
             if val_loader != None:
                 self.validation(val_loader)
-            
-            # store gradients and kfacs
-            if epoch == self.config['schedule'][-1] - 1:
-              
-              for i in range(self.model.n):
-                self.model.stored_task_gradients[self.model.task_id][i] /= len(train_loader.dataset)
+        
+        # collect the gradients in self.model.stored_task_gradients
+        for i, (input, target, task) in enumerate(train_loader):
+            self.model.batch_size = len(target)
+            if self.gpu:
+                input = input.cuda()
+                target = target.cuda()
+            self.gradient_capture(input, target, task)                     
+        for i in range(self.model.n):
+            self.model.stored_task_gradients[self.model.task_id][i] /= len(train_loader.dataset)
+            self.model.stored_kfac_As[self.model.task_id][i] = self.model.As[i] / batch_size
+            self.model.stored_kfac_Bs[self.model.task_id][i] = self.model.Bs[i] * batch_size
                 
-                self.model.stored_kfac_As[self.model.task_id][i] = self.model.As[i] / batch_size
-                self.model.stored_kfac_Bs[self.model.task_id][i] = self.model.Bs[i] * batch_size
-                      
-              self.model.task_id += 1
-              print('task id', self.model.task_id)
-              self.model.projection_gradient_capture = False
+        self.model.task_id += 1
+        print('task id', self.model.task_id)	
 
     def learn_stream(self, data, label):
         assert False,'No implementation yet'
