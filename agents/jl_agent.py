@@ -265,8 +265,14 @@ class JlNN(nn.Module):
             for i in range(self.model.n):                    
                 self.model.stored_task_gradients[prev_task][i] += torch.clone(self.model.stored_kfac_As[prev_task][i] @ self.optimizer.prev_update_list[i] @ self.model.stored_kfac_Bs[prev_task][i]).detach()  
                 self.model.task_gradients[prev_task][i] = torch.clone(self.model.stored_task_gradients[prev_task][i]).detach()              
-        self.gram_schmidt()
-        
+        #self.gram_schmidt()
+        for task in range(self.model.task_id):
+            for prev_task in range(task):
+                inner_prod_grad = ip(self.model.stored_task_gradients[task], self.model.stored_task_gradients[prev_task])
+                for i in range(self.model.n):
+                    self.model.task_gradients[task][i] -= inner_prod_grad / self.model.task_grad_ips[prev_task] * self.model.stored_task_gradients[prev_task][i]
+            self.model.task_grad_ips[task] = ip(self.model.task_gradients[task], self.model.task_gradients[task])        
+            
         return true_loss.detach(), output_logits
     
     def gram_schmidt(self):
