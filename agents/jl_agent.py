@@ -263,7 +263,7 @@ class JlNN(nn.Module):
         
         for prev_task in range(self.model.task_id):
             for i in range(self.model.n):                    
-                self.model.stored_task_gradients[prev_task][i] += self.model.stored_kfac_As[prev_task][i] @ self.optimizer.prev_update_list[i] @ self.model.stored_kfac_Bs[prev_task][i]  
+                self.model.stored_task_gradients[prev_task][i] += torch.clone(self.model.stored_kfac_As[prev_task][i] @ self.optimizer.prev_update_list[i] @ self.model.stored_kfac_Bs[prev_task][i]).detach()  
                 self.model.task_gradients[prev_task][i] = self.model.stored_task_gradients[prev_task][i]              
         self.gram_schmidt()
         
