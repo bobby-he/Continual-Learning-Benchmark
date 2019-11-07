@@ -97,7 +97,7 @@ def get_args(argv):
     parser.add_argument('--gpuid', nargs="+", type=int, default=[0],
                         help="The list of gpuid, ex:--gpuid 3 1. Negative value means cpu-only")
     parser.add_argument('--model_type', type=str, default='jl_models', help="The type (mlp|lenet|vgg|resnet) of backbone network")
-    parser.add_argument('--model_name', type=str, default='JlNet400', help="The name of actual model for the backbone")
+    parser.add_argument('--model_name', type=str, default='JlNet500', help="The name of actual model for the backbone")
     parser.add_argument('--force_out_dim', type=int, default=2, help="Set 0 to let the task decide the required output dimension")
     parser.add_argument('--agent_type', type=str, default='jl_agent', help="The type (filename) of agent")
     parser.add_argument('--agent_name', type=str, default='JlNN', help="The class name of agent")

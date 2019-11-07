@@ -40,11 +40,13 @@ def regularized_cholesky_factor(mat, lambda_, inverse_method='cpu',
   return cho_factor
 
 def ng_init(s1, s2, bias = True): # uniform weight init from Ng UFLDL, and zero biases
-  r = 1 / np.sqrt(s1)
+  #r = 1 / np.sqrt(s1)
   if bias:
     s1 += 1
-  flat = np.random.random(s1*s2)*2*r-r
+  # ntk parameterisation  
+  flat = np.random.random(s1*s2)*2 - 1 #*r-r
   weights = flat.reshape([s1, s2])
+  weights[-1, :] *= np.sqrt(s1)
   #biases = np.zeros((1, s2))
   #combo = np.concatenate((weights, biases))
   return weights.astype(default_np_dtype)
@@ -87,6 +89,7 @@ class JlNet(nn.Module):
     self.initialize_list = [True] * self.n
     self.pre_reg_mat = [None] * 1
     self.AU_AU = [None] * 1
+    self.A_A = [None] * 1
     self.precon_update_list = [None] * self.n
     self.grad_list = [None] * self.n 
     self.Bs = [None] * self.n
@@ -123,8 +126,8 @@ class JlNet(nn.Module):
     self.task_id = 0
     
     self.projection_method = 'kfac_ema_over_all_projections'
-    self.undo_projection_method = 'optimize_in_projection_space'
-    #self.undo_projection_method = 'projected_optimization_in_whole_space'
+    self.undo_projection_method = 'psd_project_gradient'
+    #self.undo_projection_method = 'optimize_in_projection_space'
     
     self.backward_mode = 'U_proj_capture'
 ##############################################################
@@ -206,29 +209,45 @@ class JlNet(nn.Module):
         
           grads_pre_fisher = A.t() @ B # already normalised as B is divided by batch_size
           
-          if i == self.n-1: 
-            approx_kmat_cho = regularized_cholesky_factor(self.pre_reg_mat[0], lambda_ = self.damping)
-            temp = torch.from_numpy(cho_solve((approx_kmat_cho.cpu().numpy(), True), self.grads_proj[0].view(-1, 1).cpu().numpy()))         
-            if self.use_cuda: 
-              temp = temp.cuda() 
+          if self.undo_projection_method == 'optimize_in_projection_space' or self.undo_projection_method == 'projected_optimization_in_whole_space':
+            if i == self.n-1: 
+              approx_kmat_cho = regularized_cholesky_factor(self.pre_reg_mat[0], lambda_ = self.damping)
+              temp = torch.from_numpy(cho_solve((approx_kmat_cho.cpu().numpy(), True), self.grads_proj[0].view(-1, 1).cpu().numpy()))         
+              if self.use_cuda: 
+                temp = temp.cuda() 
             
-            if self.undo_projection_method == 'optimize_in_projection_space':
-              self.pre_proj[0] = temp            
-            elif self.undo_projection_method == 'projected_optimization_in_whole_space':
-              self.pre_proj[0] = self.pre_reg_mat[0] @ temp   
-
-          test = self.A_proj[i] * self.grads_proj[0].view(-1, 1) 
-          grads_pre_fisher_test = (test.t() @ self.B_proj[i]) * self.proj_dim
+              if self.undo_projection_method == 'optimize_in_projection_space':
+                self.pre_proj[0] = temp            
+              elif self.undo_projection_method == 'projected_optimization_in_whole_space':
+                self.pre_proj[0] = self.pre_reg_mat[0] @ temp   
           
-          A_temp = self.A_proj[i] * self.pre_proj[0] ###
+          elif self.undo_projection_method == 'projected_gradient':
+            if i == self.n-1:
+              approx_kmat_cho = regularized_cholesky_factor(self.A_A[0], lambda_ = self.damping)
+              temp = torch.from_numpy(cho_solve((approx_kmat_cho.cpu().numpy(), True), self.grads_proj[0].view(-1, 1).cpu().numpy()))
+              if self.use_cuda:
+                temp = temp.cuda()
+              self.pre_proj[0] = temp
+            test = self.A_proj[i] * self.pre_proj[0].view(-1, 1)
+            grads_pre_fisher_test = (test.t() @ self.B_proj[i]) * self.proj_dim
+          elif self.undo_projection_method == 'psd_project_gradient':
+            test = self.A_proj[i] * self.grads_proj[0].view(-1, 1) 
+            grads_pre_fisher_test = (test.t() @ self.B_proj[i]) * self.proj_dim
+          
+           ###
           
           if self.undo_projection_method == 'optimize_in_projection_space':
+            A_temp = self.A_proj[i] * self.pre_proj[0]
             update = (A_temp.t() @ self.B_proj[i]) # A^T(AU (AU)^T + \lambda I)^{-1} A \delta     
             grad_matrix2 = Variable(update)                             
           elif self.undo_projection_method == 'projected_optimization_in_whole_space':
+            A_temp = self.A_proj[i] * self.pre_proj[0]
             grad_subtract = (A_temp.t() @ self.B_proj[i]) * self.proj_dim # A^T (AU)(AU)^T [(AU)(AU)^T + \lambda I]^{-1} A \delta
             update = grads_pre_fisher_test - grad_subtract  ###
             grad_matrix2 = Variable(update) / self.damping
+          elif self.undo_projection_method == 'psd_project_gradient' or self.undo_projection_method == 'projected_gradient':
+            grad_matrix2 = Variable(grads_pre_fisher_test)
+            #grad_matrix2 = Variable(grads_pre_fisher)
           
           self.grad_list[i] = torch.clone(grads_pre_fisher).detach()
           self.precon_update_list[i] = torch.clone(grad_matrix2).detach()  
@@ -306,7 +325,7 @@ class JlNet(nn.Module):
                     ones_input = ones_input.cuda()
                 input= torch.cat((input, ones_input), dim = 1)
                     
-            return jlng_matmul(input, self.weights, self.layer_idx)
+            return jlng_matmul(input, self.weights, self.layer_idx) / np.sqrt(self.in_features)
             
         def extra_repr(self):
             return 'in_features={}, out_features={}, bias={}'.format(
@@ -323,13 +342,34 @@ class JlNet(nn.Module):
     self.last = JlLinear(hidden_dim, out_dim, layer_idx = 2, use_cuda = self.use_cuda)    
     
   def new_proj(self):
-    indices = np.random.choice(2000, self.proj_dim, replace=False)
+    indices = np.random.choice(self.proj_dim, self.proj_dim, replace=False)
     self.A_proj, self.B_proj = [self.A_proj_superset[i][indices,:] for i in range(self.n)], [self.B_proj_superset[i][indices, :] for i in range(self.n)]
     self.initialize[0] = True
     
-  def sample_new_proj(self):
-    self.A_proj_superset, self.B_proj_superset = jl_kfac_gaussian_proj_mats(self.fs, q = 2000, use_cuda = self.use_cuda)
     
+  def sample_new_proj(self):
+    self.A_proj_superset, self.B_proj_superset = jl_kfac_gaussian_proj_mats(self.fs, q = self.proj_dim, use_cuda = self.use_cuda)
+    indices = np.random.choice(self.proj_dim, self.proj_dim, replace=False)
+    self.A_proj, self.B_proj = [self.A_proj_superset[i][indices,:] for i in range(self.n)], [self.B_proj_superset[i][indices, :] for i in range(self.n)]
+    self.A_A[0] = sum([(self.A_proj[i] @ self.A_proj[i].t()) * (self.B_proj[i] @ self.B_proj[i].t()) for i in range(self.n)])
+     
+    A_proj_0, B_proj_0 = [self.A_proj_superset[i][0,:] for i in range(self.n)], [self.B_proj_superset[i][0,:] for i in range(self.n)]
+    A_proj_1, B_proj_1 = [self.A_proj_superset[i][1,:] for i in range(self.n)], [self.B_proj_superset[i][1,:] for i in range(self.n)]
+    
+    A01 = [sum(A_proj_0[i] * A_proj_1[i]) for i in range(self.n)]
+    B01 = [sum(B_proj_0[i] * B_proj_0[i]) for i in range(self.n)]
+    #print(A01)
+    A00 = [sum(A_proj_0[i] * A_proj_0[i]) for i in range(self.n)]
+    B00 = [sum(B_proj_0[i] * B_proj_0[i]) for i in range(self.n)]
+    #print(A00)
+    A11 = [sum(A_proj_1[i] * A_proj_1[i]) for i in range(self.n)]
+    B11 = [sum(B_proj_1[i] * B_proj_1[i]) for i in range(self.n)]
+    
+    ip01 = sum([A01[i] * B01[i] for i in range(self.n)])
+    ip00 = sum([A00[i] * B00[i] for i in range(self.n)])
+    ip11 = sum([A11[i] * B11[i] for i in range(self.n)])
+    
+    #print(ip01 / torch.sqrt(ip00 * ip11))
   def reset_damping(self):
     self.damping = self.initial_damping
     print(self.damping)
@@ -357,6 +397,8 @@ def JlNet100():
 def JlNet400():
     return JlNet(hidden_dim=400)
 
+def JlNet500():
+    return JlNet(hidden_dim=500)
 
 def JlNet1000():
     return JlNet(hidden_dim=1000)
