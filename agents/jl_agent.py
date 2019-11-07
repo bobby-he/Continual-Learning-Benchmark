@@ -178,7 +178,7 @@ class JlNN(nn.Module):
         # actually compute updates
         self.optimizer.zero_grad()
         self.model.backward_mode = 'jlng'
-        true_loss.backward(retain_graph = True)
+        true_loss.backward()#retain_graph = True)
         
             # Do the orthogonal projection
         for prev_task in range(self.model.task_id):
