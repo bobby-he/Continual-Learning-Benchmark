@@ -43,7 +43,7 @@ class JlNN(nn.Module):
         self.reset_optimizer = True
         self.valid_out_dim = 'ALL'  # Default: 'ALL' means all output nodes are active
                                     # Set a interger here for the incremental class scenario
-        self.adjust_lr_and_momentum = False
+        self.adjust_lr_and_momentum = True
 
     def init_optimizer(self):
         optimizer_arg = {'params':self.model.parameters(),
@@ -178,7 +178,7 @@ class JlNN(nn.Module):
         # actually compute updates
         self.optimizer.zero_grad()
         self.model.backward_mode = 'jlng'
-        true_loss.backward()#retain_graph = True)
+        true_loss.backward(retain_graph = True)
         
             # Do the orthogonal projection
         for prev_task in range(self.model.task_id):
