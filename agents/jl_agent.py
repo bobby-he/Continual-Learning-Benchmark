@@ -222,6 +222,7 @@ class JlNN(nn.Module):
             if self.first_update:
               print('yo')
               alpha = -1 * c_1 / (b_11 + m_11)
+              print(alpha)
               #print(alpha)
               self.optimizer.momentum = 0
               assert (alpha>=0), 'Looks like you have a negative learning rate noob!'
