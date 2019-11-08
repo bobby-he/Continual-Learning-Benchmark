@@ -222,6 +222,7 @@ class JlNN(nn.Module):
             if self.first_update:
               print('yo')
               alpha = -1 * c_1 / (b_11 + m_11)
+              print(self.model.precon_update_list)
               print(alpha)
               #print(alpha)
               self.optimizer.momentum = 0
@@ -267,6 +268,7 @@ class JlNN(nn.Module):
                 self.model.stored_task_gradients[prev_task][i] += torch.clone(self.model.stored_kfac_As[prev_task][i] @ self.optimizer.prev_update_list[i] @ self.model.stored_kfac_Bs[prev_task][i]).detach()  
                 self.model.task_gradients[prev_task][i] = torch.clone(self.model.stored_task_gradients[prev_task][i]).detach()              
         #self.gram_schmidt()
+            print(self.model.stored_task_gradients[prev_task])
         for task in range(self.model.task_id):
             for prev_task in range(task):
                 inner_prod_grad = ip(self.model.stored_task_gradients[task], self.model.stored_task_gradients[prev_task])
